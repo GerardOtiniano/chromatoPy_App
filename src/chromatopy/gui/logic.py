@@ -1,0 +1,349 @@
+"""Non-visual desktop application logic."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+import os
+
+import pandas as pd
+
+from ..FID.FID_integration import integration as fid_integration
+from ..hplc_integration import hplc_integration
+from ..hplc_to_csv import hplc_to_csv
+from ..ic_ms_to_csv import ic_ms_to_csv
+from ..utils.GDGT_compounds import get_gdgt, json_to_gdgt_meta, load_gdgt_meta_json
+from ..utils.data_schema import (
+    EXCLUDED_COLUMNS,
+    build_single_channel_meta,
+    detect_data_schema,
+    list_csv_files,
+)
+from .settings_memory import (
+    delete_compound_history,
+    list_compound_histories,
+    remember_compound_history,
+)
+
+
+def load_saved_gdgt_meta():
+    try:
+        return json_to_gdgt_meta(load_gdgt_meta_json())
+    except FileNotFoundError:
+        return get_gdgt("4")
+
+
+def _clean_header_name(column: str) -> str:
+    return column[:-2] if str(column).endswith(".0") else str(column)
+
+
+def _looks_like_time_header(column: str) -> bool:
+    lowered = column.lower()
+    return any(token in lowered for token in ("time", "second", "seconds", "minute", "minutes"))
+
+
+def collect_general_header_options(folder_path: str) -> tuple[list[str], str, str]:
+    csv_files = list_csv_files(folder_path)
+    if not csv_files:
+        raise ValueError("No CSV files were found in the selected folder.")
+
+    unique_headers: list[str] = []
+    seen: set[str] = set()
+    for sample_file in csv_files:
+        preview = pd.read_csv(os.path.join(folder_path, sample_file), nrows=0)
+        for raw_column in preview.columns:
+            column = _clean_header_name(raw_column)
+            if column not in seen:
+                unique_headers.append(column)
+                seen.add(column)
+
+    if len(unique_headers) < 2:
+        raise ValueError("General mode requires at least two columns: time and signal.")
+
+    time_candidates = [column for column in unique_headers if _looks_like_time_header(column)]
+    time_header = time_candidates[0] if time_candidates else unique_headers[0]
+
+    signal_candidates = [
+        column
+        for column in unique_headers
+        if column not in EXCLUDED_COLUMNS
+        and not str(column).startswith("Unnamed:")
+        and column != time_header
+    ]
+    if not signal_candidates:
+        signal_candidates = [column for column in unique_headers if column != time_header]
+    if not signal_candidates:
+        raise ValueError("General mode requires at least one signal column.")
+
+    signal_header = signal_candidates[0]
+    return unique_headers, time_header, signal_header
+
+
+def detect_general_headers(folder_path: str) -> tuple[str, str]:
+    _, time_header, signal_header = collect_general_header_options(folder_path)
+    return time_header, signal_header
+
+
+def detect_general_window_bounds(folder_path: str, time_header: str) -> tuple[float, float]:
+    csv_files = list_csv_files(folder_path)
+    if not csv_files:
+        raise ValueError("No CSV files were found in the selected folder.")
+
+    min_value = None
+    max_value = None
+    matched_header = None
+
+    for sample_file in csv_files:
+        sample_path = os.path.join(folder_path, sample_file)
+        preview = pd.read_csv(sample_path)
+        cleaned_columns = {_clean_header_name(column): column for column in preview.columns}
+        if time_header not in cleaned_columns:
+            continue
+
+        source_header = cleaned_columns[time_header]
+        series = pd.to_numeric(preview[source_header], errors="coerce").dropna()
+        if series.empty:
+            continue
+
+        matched_header = time_header
+        series_min = float(series.min())
+        series_max = float(series.max())
+        min_value = series_min if min_value is None else min(min_value, series_min)
+        max_value = series_max if max_value is None else max(max_value, series_max)
+
+    if matched_header is None or min_value is None or max_value is None:
+        raise ValueError(f"Could not calculate window bounds for time header '{time_header}'.")
+
+    return min_value, max_value
+
+
+@dataclass
+class IntegrationConfiguration:
+    mode: str = "HPLC"
+    input_folder: str = ""
+    schema_type: str = "multi_channel"
+    time_column: str = "RT (min)"
+    signal_columns: list[str] = field(default_factory=list)
+    general_time_header: str = ""
+    general_signal_header: str = ""
+    gdgt_meta_set: dict = field(default_factory=load_saved_gdgt_meta)
+    general_compounds: list[str] = field(default_factory=list)
+    general_window: list[float] = field(default_factory=lambda: [0.0, 60.0])
+    peak_neighborhood_n: int = 10
+    smoothing_window: int = 9
+    smoothing_factor: int = 3
+    gaus_iterations: int = 4000
+    minimum_peak_amplitude: float | None = None
+    maximum_peak_amplitude: float | None = None
+    peak_boundary_derivative_sensitivity: float = 0.01
+    peak_prominence: float = 2.0
+    cheers: bool = False
+    debug: bool = False
+    normalize_by_standard: bool = True
+    reference_trace: str = ""
+    reference_compound: str = ""
+    reference_window: list[float] = field(default_factory=lambda: [10.0, 30.0])
+    use_asymmetric_peak_integration: bool = False
+    enable_peak_deconvolution: bool = True
+    clip_negative_amplitudes: bool = True
+
+
+def refresh_integration_config(config: IntegrationConfiguration) -> IntegrationConfiguration:
+    if not config.input_folder:
+        return config
+
+    if config.mode == "FID":
+        config.schema_type = "fid_text"
+        return config
+
+    schema = detect_data_schema(config.input_folder)
+    config.schema_type = schema.schema_type
+    config.time_column = schema.time_column
+    config.signal_columns = schema.signal_columns
+
+    if config.mode == "General":
+        time_header, signal_header = detect_general_headers(config.input_folder)
+        if not config.general_time_header:
+            config.general_time_header = time_header
+        if not config.general_signal_header:
+            config.general_signal_header = signal_header
+        if not config.general_compounds:
+            config.general_compounds = [config.general_signal_header]
+        if not config.reference_trace:
+            config.reference_trace = config.general_signal_header
+        if not config.reference_compound:
+            config.reference_compound = config.general_compounds[0]
+        if config.reference_window == [10.0, 30.0]:
+            config.reference_window = list(config.general_window)
+        return config
+
+    if not config.reference_trace and config.gdgt_meta_set["Trace"]:
+        config.reference_trace = config.gdgt_meta_set["Trace"][0][0]
+    if not config.reference_compound:
+        reference_mapping = config.gdgt_meta_set["GDGT_dict"][0].get(config.reference_trace, "")
+        config.reference_compound = reference_mapping[0] if isinstance(reference_mapping, list) else str(reference_mapping)
+    if config.reference_window == [10.0, 30.0] and config.gdgt_meta_set["window"]:
+        config.reference_window = list(config.gdgt_meta_set["window"][0])
+    return config
+
+
+def summarize_gdgt_meta(gdgt_meta_set: dict) -> str:
+    lines = []
+    for name_group, traces, window in zip(
+        gdgt_meta_set["names"], gdgt_meta_set["GDGT_dict"], gdgt_meta_set["window"]
+    ):
+        group_name = name_group[0] if isinstance(name_group, list) else str(name_group)
+        traces_text = []
+        for trace_id, compounds in traces.items():
+            label = ", ".join(compounds) if isinstance(compounds, list) else str(compounds)
+            traces_text.append(f"{trace_id}: {label}")
+        lines.append(f"{group_name} [{window[0]}, {window[1]} min]")
+        lines.append(f"  {' | '.join(traces_text)}")
+    return "\n".join(lines)
+
+
+def summarize_integration_configuration(config: IntegrationConfiguration) -> str:
+    refresh_integration_config(config)
+    lines = [
+        f"Mode: {config.mode}",
+        f"Input folder: {config.input_folder or 'Not set'}",
+        f"Schema: {config.schema_type}",
+        f"Peak neighborhood size: {config.peak_neighborhood_n}",
+        f"Smoothing window: {config.smoothing_window}",
+        f"Smoothing factor: {config.smoothing_factor}",
+        f"Gaussian iterations: {config.gaus_iterations}",
+        f"Minimum peak amplitude: {config.minimum_peak_amplitude if config.minimum_peak_amplitude is not None else 'Auto (legacy)'}",
+        f"Peak prominence: {config.peak_prominence}",
+    ]
+
+    if config.mode == "General":
+        asym_enabled = (not config.enable_peak_deconvolution) and config.use_asymmetric_peak_integration
+        lines.extend(
+            [
+                f"Time header: {config.general_time_header or 'Not set'}",
+                f"Signal header: {config.general_signal_header or 'Not set'}",
+                f"Compound names: {', '.join(config.general_compounds) if config.general_compounds else 'Not set'}",
+                f"Asymmetric peak fitting: {'On' if asym_enabled else 'Off'}",
+                f"Peak deconvolution: {'On' if config.enable_peak_deconvolution else 'Off'}",
+                f"Clip negatives to zero: {'On' if config.clip_negative_amplitudes else 'Off'}",
+                "Time normalization: Disabled",
+            ]
+        )
+    elif config.mode == "HPLC":
+        lines.extend(
+            [
+                f"Time normalization: {'On' if config.normalize_by_standard else 'Off'}",
+                "",
+                "Configured channels and compounds:",
+                summarize_gdgt_meta(config.gdgt_meta_set),
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "FID uses the existing FID integration module.",
+                "Select the folder containing the exported .txt chromatograms.",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def build_general_summary(config: IntegrationConfiguration) -> str:
+    meta = build_single_channel_meta(
+        signal_column=config.general_signal_header or "signal",
+        compound_names=config.general_compounds,
+        window_bounds=config.general_window,
+    )
+    return summarize_gdgt_meta(meta)
+
+
+def run_data_conversion(input_folder: str, output_folder: str | None = None, data_type: str = "HPLC"):
+    if not input_folder:
+        raise ValueError("Select the folder that contains the raw data to convert.")
+    if data_type == "IC MS":
+        return ic_ms_to_csv(base_path=input_folder, output_base_path=output_folder or None)
+    return hplc_to_csv(base_path=input_folder, output_base_path=output_folder or None)
+
+
+def run_peak_integration(config: IntegrationConfiguration, message_callback=None):
+    refresh_integration_config(config)
+    if not config.input_folder:
+        raise ValueError("Select an input folder for peak integration.")
+
+    if config.mode == "FID":
+        return fid_integration(
+            folder_path=config.input_folder,
+            minimum_peak_amplitude=config.minimum_peak_amplitude,
+            maximum_peak_amplitude=config.maximum_peak_amplitude,
+            peak_boundary_derivative_sensitivity=config.peak_boundary_derivative_sensitivity,
+            peak_prominence=config.peak_prominence,
+            peak_neighborhood_n=config.peak_neighborhood_n,
+            smoothing_window=config.smoothing_window,
+            smoothing_factor=config.smoothing_factor,
+            gaus_iterations=config.gaus_iterations,
+        )
+
+    if config.mode == "General":
+        compounds = [name.strip() for name in config.general_compounds if name.strip()]
+        if not compounds:
+            raise ValueError("General mode requires at least one compound name.")
+        remember_compound_history(compounds)
+        use_asymmetric_fit = (not config.enable_peak_deconvolution) and config.use_asymmetric_peak_integration
+        return hplc_integration(
+            folder_path=config.input_folder,
+            schema_type="single_channel",
+            time_column=config.general_time_header,
+            single_channel_compounds=compounds,
+            single_channel_signal_column=config.general_signal_header,
+            single_channel_window=config.general_window,
+            peak_neighborhood_n=config.peak_neighborhood_n,
+            smoothing_window=config.smoothing_window,
+            smoothing_factor=config.smoothing_factor,
+            gaus_iterations=config.gaus_iterations,
+            minimum_peak_amplitude=config.minimum_peak_amplitude,
+            maximum_peak_amplitude=config.maximum_peak_amplitude,
+            peak_boundary_derivative_sensitivity=config.peak_boundary_derivative_sensitivity,
+            peak_prominence=config.peak_prominence,
+            cheers=config.cheers,
+            debug=config.debug,
+            normalize_by_standard=False,
+            reference_trace=None,
+            reference_compound=None,
+            reference_window=None,
+            use_asymmetric_peak_integration=use_asymmetric_fit,
+            enable_peak_deconvolution=config.enable_peak_deconvolution,
+            clip_negative_amplitudes=config.clip_negative_amplitudes,
+            message_callback=message_callback,
+            edit_metadata=False,
+        )
+
+    return hplc_integration(
+        folder_path=config.input_folder,
+        windows=config.gdgt_meta_set["window"],
+        gdgt_meta_set=config.gdgt_meta_set,
+        peak_neighborhood_n=config.peak_neighborhood_n,
+        smoothing_window=config.smoothing_window,
+        smoothing_factor=config.smoothing_factor,
+        gaus_iterations=config.gaus_iterations,
+        minimum_peak_amplitude=config.minimum_peak_amplitude,
+        maximum_peak_amplitude=config.maximum_peak_amplitude,
+        peak_boundary_derivative_sensitivity=config.peak_boundary_derivative_sensitivity,
+        peak_prominence=config.peak_prominence,
+        cheers=config.cheers,
+        debug=config.debug,
+        schema_type="multi_channel",
+        time_column=config.time_column,
+        normalize_by_standard=config.normalize_by_standard,
+        reference_trace=config.reference_trace or None,
+        reference_compound=config.reference_compound or None,
+        reference_window=config.reference_window,
+        message_callback=message_callback,
+        edit_metadata=False,
+    )
+
+
+def available_compound_histories() -> list[list[str]]:
+    return list_compound_histories()
+
+
+def remove_compound_history(compounds: list[str]) -> None:
+    delete_compound_history(compounds)
