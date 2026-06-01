@@ -6,6 +6,9 @@ on:
     tags:
       - "v*"
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build ${{ matrix.os }}
@@ -78,3 +81,9 @@ jobs:
         with:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.archive_name }}
+
+      - name: Upload build to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.archive_name }}
