@@ -130,10 +130,13 @@ def _bundled_resource_path(filename: str) -> Path:
 GDGT_META_PATH = _user_config_dir() / "gdgt_meta.json"
 GDGT_META_DEFAULT_PATH = _bundled_resource_path("gdgt_meta_default.json")
 GDGT_META_BUNDLED_PATH = _bundled_resource_path("gdgt_meta.json")
+_QT_IMPORT_ERROR = None
 
 try:
     from ..qt_compat import ApplicationModal, QtCore, QtWidgets, Signal, exec_dialog
-except ImportError:
+except ImportError as exc:
+    _QT_IMPORT_ERROR = exc
+
     class _DummyQtCore:
         class Qt:
             ApplicationModal = 0
@@ -522,9 +525,8 @@ def edit_gdgt_meta_qt(initial_meta: dict, parent=None) -> dict:
         {"names": [...], "GDGT_dict": [...], "Trace": [...], "window": [...]}
       containing only the *enabled* groups.
     """
-    if QtWidgets is None:
-        print("Qt bindings not available; using default GDGT metadata without GUI.")
-        return initial_meta
+    if _QT_IMPORT_ERROR is not None or not hasattr(QtWidgets, "QApplication"):
+        raise RuntimeError(f"Qt bindings are not available for the sample group editor: {_QT_IMPORT_ERROR}")
 
     # ---- load default JSON (must exist) ----
     try:

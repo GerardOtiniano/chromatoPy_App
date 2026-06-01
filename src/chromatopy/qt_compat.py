@@ -20,6 +20,8 @@ QT_API = ""
 #     QT_API = "PyQt5"
 #     Signal = QtCore.pyqtSignal
 from PySide6 import QtCore, QtGui, QtWidgets
+Signal = QtCore.Signal
+QT_API = "PySide6"
 
 
 Qt = QtCore.Qt
