@@ -33,6 +33,8 @@ from .logic import (
     IntegrationConfiguration,
     available_compound_histories,
     build_general_summary,
+    calculate_hplc_fractional_abundance,
+    calculate_hplc_indices,
     collect_general_header_options,
     detect_general_window_bounds,
     integration_file_status,
@@ -149,7 +151,7 @@ class IntegrationConfigurationDialog(QDialog):
         edit_meta_row = QHBoxLayout()
         edit_meta_row.addWidget(QLabel("Multi-channel compound mapping"))
         edit_meta_row.addStretch(1)
-        self.edit_hplc_button = QPushButton("2. Edit HPLC Settings")
+        self.edit_hplc_button = QPushButton("2. Edit Sample Groups")
         self.edit_hplc_button.clicked.connect(self._edit_hplc_meta)
         edit_meta_row.addWidget(self.edit_hplc_button)
         hplc_layout.addLayout(edit_meta_row)
@@ -592,6 +594,91 @@ class PeakIntegrationPage(ModulePage):
             self.log.appendPlainText(f"{self.current_config.mode} integration finished.")
 
 
+class PostProcessingDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Post Processing")
+        self.resize(720, 420)
+
+        layout = QVBoxLayout(self)
+
+        title = QLabel("Post Processing")
+        title.setObjectName("pageTitle")
+        layout.addWidget(title)
+
+        form = QFormLayout()
+        self.data_type_combo = QComboBox()
+        self.data_type_combo.addItems(["HPLC"])
+        form.addRow("Data type", self.data_type_combo)
+
+        output_row = QHBoxLayout()
+        self.output_location_edit = QLineEdit()
+        self.output_location_edit.setPlaceholderText("Select Output_chromatoPy folder or raw data folder")
+        output_row.addWidget(self.output_location_edit, 1)
+        browse_button = QPushButton("Browse")
+        browse_button.clicked.connect(self._browse_output_location)
+        output_row.addWidget(browse_button)
+        form.addRow("Output data location", output_row)
+        layout.addLayout(form)
+
+        action_row = QHBoxLayout()
+        fractional_button = QPushButton("Calculate Fractional Abundance")
+        fractional_button.clicked.connect(self._calculate_fractional_abundance)
+        action_row.addWidget(fractional_button)
+        indices_button = QPushButton("Calculate Indices")
+        indices_button.clicked.connect(self._calculate_indices)
+        action_row.addWidget(indices_button)
+        action_row.addStretch(1)
+        layout.addLayout(action_row)
+
+        self.log = QPlainTextEdit()
+        self.log.setReadOnly(True)
+        layout.addWidget(self.log, 1)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _browse_output_location(self):
+        folder = QFileDialog.getExistingDirectory(
+            self,
+            "Select HPLC Output Data Folder",
+            self.output_location_edit.text().strip(),
+        )
+        if folder:
+            self.output_location_edit.setText(folder)
+
+    def _calculate_fractional_abundance(self):
+        try:
+            QApplication.setOverrideCursor(WaitCursor)
+            result = calculate_hplc_fractional_abundance(self.output_location_edit.text().strip())
+        except Exception as exc:
+            QMessageBox.critical(self, "Fractional abundance failed", str(exc))
+            return
+        finally:
+            QApplication.restoreOverrideCursor()
+        self.log.appendPlainText(
+            f"Calculated fractional abundance for {result['rows']} sample(s).\n"
+            f"Saved: {result['fractional_abundance_path']}"
+        )
+
+    def _calculate_indices(self):
+        try:
+            QApplication.setOverrideCursor(WaitCursor)
+            result = calculate_hplc_indices(self.output_location_edit.text().strip())
+        except Exception as exc:
+            QMessageBox.critical(self, "Index calculation failed", str(exc))
+            return
+        finally:
+            QApplication.restoreOverrideCursor()
+        self.log.appendPlainText(
+            f"Calculated indices for {result['rows']} sample(s).\n"
+            f"Saved: {result['indices_path']}\n"
+            f"Saved: {result['meth_set_path']}\n"
+            f"Saved: {result['cyc_set_path']}"
+        )
+
+
 class ChromatoPyMainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -630,6 +717,13 @@ class ChromatoPyMainWindow(QMainWindow):
                 "Peak Integration",
                 "Use one integration screen with HPLC, FID, and General modes.",
                 self.show_peak_integration,
+            )
+        )
+        dashboard_layout.addWidget(
+            self._build_module_card(
+                "Post Processing",
+                "Calculate fractional abundances and common HPLC indices from integrated output.",
+                self.open_post_processing,
             )
         )
         root_layout.addWidget(self.dashboard)
@@ -675,3 +769,7 @@ class ChromatoPyMainWindow(QMainWindow):
         self.dashboard.hide()
         self.data_conversion_page.hide()
         self.peak_integration_page.show()
+
+    def open_post_processing(self):
+        dialog = PostProcessingDialog(self)
+        exec_dialog(dialog)

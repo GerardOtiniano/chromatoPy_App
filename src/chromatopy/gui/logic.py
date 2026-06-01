@@ -14,6 +14,7 @@ from ..hplc_integration import hplc_integration
 from ..hplc_to_csv import hplc_to_csv
 from ..ic_ms_to_csv import ic_ms_to_csv
 from ..utils.GDGT_compounds import get_gdgt, json_to_gdgt_meta, load_gdgt_meta_json
+from ..utils.calculate_indices import calculate_fa, calculate_indices, calculate_raberg2021
 from ..utils.data_schema import (
     EXCLUDED_COLUMNS,
     build_single_channel_meta,
@@ -268,6 +269,68 @@ def run_data_conversion(input_folder: str, output_folder: str | None = None, dat
     if data_type == "IC MS":
         return ic_ms_to_csv(base_path=str(input_path), output_base_path=str(output_path))
     return hplc_to_csv(base_path=str(input_path), output_base_path=str(output_path))
+
+
+def _resolve_hplc_peak_area_file(output_location: str) -> Path:
+    if not output_location:
+        raise ValueError("Select the folder containing HPLC output data.")
+
+    output_path = Path(output_location).expanduser()
+    if output_path.is_file():
+        if output_path.name != "results_peak_area.csv":
+            raise ValueError("Select results_peak_area.csv or the folder containing it.")
+        return output_path
+
+    if not output_path.is_dir():
+        raise ValueError(f"Provided path is not a valid file or directory: {output_path}")
+
+    candidates = [
+        output_path / "results_peak_area.csv",
+        output_path / "Output_chromatoPy" / "results_peak_area.csv",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+
+    raise ValueError(
+        "Could not find results_peak_area.csv in the selected folder or its Output_chromatoPy subfolder."
+    )
+
+
+def calculate_hplc_fractional_abundance(output_location: str) -> dict:
+    results_path = _resolve_hplc_peak_area_file(output_location)
+    df = pd.read_csv(results_path)
+    df_fa = calculate_fa(df)
+    output_path = results_path.parent / "chromatopy_fractional_abundance.csv"
+    df_fa.to_csv(output_path, index=False)
+    return {
+        "input_path": str(results_path),
+        "fractional_abundance_path": str(output_path),
+        "rows": len(df_fa),
+    }
+
+
+def calculate_hplc_indices(output_location: str) -> dict:
+    results_path = _resolve_hplc_peak_area_file(output_location)
+    df = pd.read_csv(results_path)
+    df_fa = calculate_fa(df)
+    df_meth, df_cyc = calculate_raberg2021(df)
+    df_indices = calculate_indices(df_fa, df_meth, df_cyc)
+
+    output_dir = results_path.parent
+    indices_path = output_dir / "chromatopy_indices.csv"
+    meth_path = output_dir / "chromatopy_meth_set.csv"
+    cyc_path = output_dir / "chromatopy_cyc_set.csv"
+    df_indices.to_csv(indices_path, index=False)
+    df_meth.to_csv(meth_path, index=False)
+    df_cyc.to_csv(cyc_path, index=False)
+    return {
+        "input_path": str(results_path),
+        "indices_path": str(indices_path),
+        "meth_set_path": str(meth_path),
+        "cyc_set_path": str(cyc_path),
+        "rows": len(df_indices),
+    }
 
 
 def count_integration_files(config: IntegrationConfiguration) -> int:
