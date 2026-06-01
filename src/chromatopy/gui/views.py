@@ -35,6 +35,7 @@ from .logic import (
     build_general_summary,
     collect_general_header_options,
     detect_general_window_bounds,
+    integration_file_status,
     refresh_integration_config,
     remove_compound_history,
     run_data_conversion,
@@ -47,16 +48,18 @@ from .logic import (
 class IntegrationConfigurationDialog(QDialog):
     """Collect parameters for HPLC, FID, or General peak integration."""
 
-    def __init__(self, config: IntegrationConfiguration, parent=None):
+    def __init__(self, config: IntegrationConfiguration, parent=None, on_file_count=None):
         super().__init__(parent)
         self.setWindowTitle("Configure Peak Integration")
         self.resize(820, 780)
         self._config = copy.deepcopy(config)
+        self._on_file_count = on_file_count
+        self._last_counted_folder = ""
 
         layout = QVBoxLayout(self)
 
         intro = QLabel(
-            "Load a data folder and verify the settings before launching the existing integration logic."
+            "Load data folder containing converted data and verify the settings before launching integration"
         )
         intro.setWordWrap(True)
         layout.addWidget(intro)
@@ -70,7 +73,7 @@ class IntegrationConfigurationDialog(QDialog):
         self.input_folder_edit.textChanged.connect(self._folder_text_changed)
         self.input_folder_edit.editingFinished.connect(self._refresh_from_folder)
         folder_row.addWidget(self.input_folder_edit, 1)
-        browse_button = QPushButton("Browse")
+        browse_button = QPushButton("1. Browse")
         browse_button.clicked.connect(self._browse_input_folder)
         folder_row.addWidget(browse_button)
         layout.addLayout(folder_row)
@@ -146,7 +149,7 @@ class IntegrationConfigurationDialog(QDialog):
         edit_meta_row = QHBoxLayout()
         edit_meta_row.addWidget(QLabel("Multi-channel compound mapping"))
         edit_meta_row.addStretch(1)
-        self.edit_hplc_button = QPushButton("Edit HPLC Settings")
+        self.edit_hplc_button = QPushButton("2. Edit HPLC Settings")
         self.edit_hplc_button.clicked.connect(self._edit_hplc_meta)
         edit_meta_row.addWidget(self.edit_hplc_button)
         hplc_layout.addLayout(edit_meta_row)
@@ -298,7 +301,11 @@ class IntegrationConfigurationDialog(QDialog):
     def _edit_hplc_meta(self):
         if self._config.mode != "HPLC":
             return
-        updated = edit_gdgt_meta_qt(self._config.gdgt_meta_set)
+        try:
+            updated = edit_gdgt_meta_qt(self._config.gdgt_meta_set, parent=self)
+        except Exception as exc:
+            QMessageBox.critical(self, "HPLC settings failed", str(exc))
+            return
         self._config.gdgt_meta_set = updated
         self._refresh_summary()
 
@@ -318,6 +325,20 @@ class IntegrationConfigurationDialog(QDialog):
             pass
         self._update_mode_sections()
         self._refresh_summary()
+        self._report_file_count()
+
+    def _report_file_count(self):
+        if self._on_file_count is None or not self._config.input_folder:
+            return
+        count_key = f"{self._config.mode}:{self._config.input_folder}"
+        if count_key == self._last_counted_folder:
+            return
+        try:
+            status = integration_file_status(self._config)
+        except Exception:
+            return
+        self._last_counted_folder = count_key
+        self._on_file_count(status)
 
     def _update_mode_sections(self):
         is_general = self._config.mode == "General"
@@ -437,14 +458,6 @@ class DataConversionPage(ModulePage):
         browse_input.clicked.connect(self._browse_input)
         input_row.addWidget(browse_input)
         form.addRow("Raw data folder", input_row)
-
-        output_row = QHBoxLayout()
-        self.output_edit = QLineEdit()
-        output_row.addWidget(self.output_edit, 1)
-        browse_output = QPushButton("Browse")
-        browse_output.clicked.connect(self._browse_output)
-        output_row.addWidget(browse_output)
-        form.addRow("Output folder", output_row)
         self._root_layout.addLayout(form)
 
         run_button = QPushButton("Run Data Conversion")
@@ -460,17 +473,11 @@ class DataConversionPage(ModulePage):
         if folder:
             self.input_edit.setText(folder)
 
-    def _browse_output(self):
-        folder = QFileDialog.getExistingDirectory(self, "Select Conversion Output Folder")
-        if folder:
-            self.output_edit.setText(folder)
-
     def _run_conversion(self):
         try:
             QApplication.setOverrideCursor(WaitCursor)
             result = run_data_conversion(
                 self.input_edit.text().strip(),
-                self.output_edit.text().strip() or None,
                 data_type=self.data_type_combo.currentText(),
             )
         except Exception as exc:
@@ -533,9 +540,27 @@ class PeakIntegrationPage(ModulePage):
     def _refresh_summary(self):
         self.summary.setPlainText(summarize_integration_configuration(self.current_config))
 
+    def _log_identified_files(self, status: dict):
+        total_files = status["total_files"]
+        processed_files = status["processed_files"]
+        if str(status.get("results_file_path", "")).endswith("results_peak_area.csv"):
+            self.log.appendPlainText(
+                f"Identified {total_files} files. {processed_files} files are already processed. "
+                "To re-integrate already processed files, please delete the row containing the integrated peaks "
+                "in 'results_peak_area.csv'."
+            )
+            return
+        self.log.appendPlainText(
+            f"Identified {total_files} files. {processed_files} files are already processed."
+        )
+
     def open_configuration(self):
         self.current_config.mode = self.mode_combo.currentText()
-        dialog = IntegrationConfigurationDialog(self.current_config, self)
+        dialog = IntegrationConfigurationDialog(
+            self.current_config,
+            self,
+            on_file_count=self._log_identified_files,
+        )
         if exec_dialog(dialog) == QDialog.Accepted:
             self.current_config = dialog.configuration()
             self.mode_combo.setCurrentText(self.current_config.mode)

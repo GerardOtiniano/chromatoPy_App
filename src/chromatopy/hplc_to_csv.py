@@ -17,7 +17,7 @@ def hplc_to_csv(base_path=None, output_base_path=None):
         
     print()
     if output_base_path is None:
-        output_base_path = os.path.join(base_path, "chromatopy - raw hplc csv")
+        output_base_path = os.path.join(base_path, "Converted Files")
     os.makedirs(output_base_path, exist_ok=True)
     exported_files = []
     # Iterate over all items in base_path assuming they are directories ending with .D

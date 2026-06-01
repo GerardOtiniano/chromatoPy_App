@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
 import os
+from pathlib import Path
 
 import pandas as pd
 
@@ -259,9 +261,67 @@ def build_general_summary(config: IntegrationConfiguration) -> str:
 def run_data_conversion(input_folder: str, output_folder: str | None = None, data_type: str = "HPLC"):
     if not input_folder:
         raise ValueError("Select the folder that contains the raw data to convert.")
+    input_path = Path(input_folder).expanduser()
+    if not input_path.is_dir():
+        raise ValueError(f"Provided path is not a valid directory: {input_path}")
+    output_path = Path(output_folder).expanduser() if output_folder else input_path / "Converted Files"
     if data_type == "IC MS":
-        return ic_ms_to_csv(base_path=input_folder, output_base_path=output_folder or None)
-    return hplc_to_csv(base_path=input_folder, output_base_path=output_folder or None)
+        return ic_ms_to_csv(base_path=str(input_path), output_base_path=str(output_path))
+    return hplc_to_csv(base_path=str(input_path), output_base_path=str(output_path))
+
+
+def count_integration_files(config: IntegrationConfiguration) -> int:
+    return integration_file_status(config)["total_files"]
+
+
+def integration_file_status(config: IntegrationConfiguration) -> dict:
+    if not config.input_folder:
+        return {"total_files": 0, "processed_files": 0, "results_file_path": ""}
+    input_path = Path(config.input_folder).expanduser()
+    if not input_path.is_dir():
+        raise ValueError(f"Provided path is not a valid directory: {input_path}")
+    if config.mode == "FID":
+        sample_names = {
+            path.stem
+            for path in input_path.iterdir()
+            if path.is_file() and path.suffix.lower() == ".txt"
+        }
+        results_file_path = input_path / "chromatoPy output" / "FID_output.json"
+        processed_names = set()
+        if results_file_path.exists():
+            try:
+                with results_file_path.open("r", encoding="utf-8") as handle:
+                    existing = json.load(handle)
+            except Exception:
+                existing = {}
+            for sample_name, sample_data in existing.get("Samples", {}).items():
+                if isinstance(sample_data, dict) and "Processed Data" in sample_data:
+                    processed_names.add(str(sample_name))
+        return {
+            "total_files": len(sample_names),
+            "processed_files": len(sample_names & processed_names),
+            "results_file_path": str(results_file_path),
+        }
+
+    csv_files = list_csv_files(str(input_path))
+    sample_names = {Path(filename).stem for filename in csv_files}
+    results_file_path = input_path / "Output_chromatoPy" / "results_peak_area.csv"
+    processed_names = set()
+    if results_file_path.exists():
+        try:
+            results_df = pd.read_csv(results_file_path)
+        except Exception:
+            results_df = pd.DataFrame()
+        if "Sample Name" in results_df.columns:
+            processed_names = {
+                str(sample_name).strip()
+                for sample_name in results_df["Sample Name"].dropna()
+            }
+    return {
+        "total_files": len(sample_names),
+        "processed_files": len(sample_names & processed_names),
+        "results_file_path": str(results_file_path),
+    }
 
 
 def run_peak_integration(config: IntegrationConfiguration, message_callback=None):

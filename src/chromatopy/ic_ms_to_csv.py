@@ -86,7 +86,7 @@ def ic_ms_to_csv(base_path=None, output_base_path=None):
     if not parent_dir.exists() or not parent_dir.is_dir():
         raise ValueError(f"Provided path is not a valid directory: {parent_dir}")
 
-    output_root = Path(output_base_path) if output_base_path else parent_dir / "Converted Raw Data"
+    output_root = Path(output_base_path) if output_base_path else parent_dir / "Converted Files"
     found_categories = set()
     files_to_process = []
 

@@ -83,11 +83,53 @@ def get_gdgt(gdgt_oi):
         "window": window_list,}
 import copy
 import json
+import os
 import sys
 from pathlib import Path
 
-GDGT_META_PATH = Path(__file__).with_name("gdgt_meta.json")
-GDGT_META_DEFAULT_PATH = Path(__file__).with_name("gdgt_meta_default.json")
+_MODULE_DIR = Path(__file__).resolve().parent
+_APP_NAME = "chromatoPy"
+
+
+def _user_config_dir() -> Path:
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / _APP_NAME
+    if sys.platform.startswith("win"):
+        root = os.environ.get("APPDATA")
+        if root:
+            return Path(root) / _APP_NAME
+    return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / _APP_NAME
+
+
+def _bundled_resource_path(filename: str) -> Path:
+    candidates = [
+        _MODULE_DIR / filename,
+    ]
+
+    pyinstaller_root = getattr(sys, "_MEIPASS", None)
+    if pyinstaller_root:
+        root = Path(pyinstaller_root)
+        candidates.extend(
+            [
+                root / "chromatopy" / "utils" / filename,
+                root / "Contents" / "Resources" / "chromatopy" / "utils" / filename,
+            ]
+        )
+
+    executable = Path(sys.executable).resolve()
+    for parent in executable.parents:
+        candidates.append(parent / "Resources" / "chromatopy" / "utils" / filename)
+        candidates.append(parent / "_internal" / "chromatopy" / "utils" / filename)
+
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
+
+
+GDGT_META_PATH = _user_config_dir() / "gdgt_meta.json"
+GDGT_META_DEFAULT_PATH = _bundled_resource_path("gdgt_meta_default.json")
+GDGT_META_BUNDLED_PATH = _bundled_resource_path("gdgt_meta.json")
 
 try:
     from ..qt_compat import ApplicationModal, QtCore, QtWidgets, Signal, exec_dialog
@@ -112,6 +154,8 @@ except ImportError:
 
 def load_gdgt_meta_json(path: Path = GDGT_META_PATH) -> dict:
     """Load the JSON config (Standard, brGDGTs, etc.)."""
+    if path == GDGT_META_PATH and not path.exists() and GDGT_META_BUNDLED_PATH.exists():
+        path = GDGT_META_BUNDLED_PATH
     with path.open("r", encoding="utf-8") as f:
         return json.load(f)
 
@@ -124,6 +168,7 @@ def load_gdgt_default_json(path: Path = GDGT_META_DEFAULT_PATH) -> dict:
 
 def save_gdgt_meta_json(meta_json: dict, path: Path = GDGT_META_PATH) -> None:
     """Save the JSON config back to disk."""
+    path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
         json.dump(meta_json, f, indent=2)
         
@@ -439,7 +484,32 @@ def groups_to_json(groups: list[dict]) -> dict:
 
     return meta_json
 
-def edit_gdgt_meta_qt(initial_meta: dict) -> dict:
+
+def gdgt_meta_to_groups(gdgt_meta: dict) -> list[dict]:
+    groups = []
+    for names, traces, window in zip(
+        gdgt_meta.get("names", []),
+        gdgt_meta.get("GDGT_dict", []),
+        gdgt_meta.get("window", []),
+    ):
+        group_name = names[0] if isinstance(names, list) and names else str(names)
+        labels = {}
+        for trace_id, compounds in traces.items():
+            if isinstance(compounds, list):
+                labels[trace_id] = ", ".join(str(compound) for compound in compounds)
+            else:
+                labels[trace_id] = str(compounds)
+        groups.append(
+            {
+                "name": group_name,
+                "enabled": True,
+                "window": window,
+                "traces": labels,
+            }
+        )
+    return groups
+
+def edit_gdgt_meta_qt(initial_meta: dict, parent=None) -> dict:
     """
     Open the GDGT settings dialog.
 
@@ -457,7 +527,10 @@ def edit_gdgt_meta_qt(initial_meta: dict) -> dict:
         return initial_meta
 
     # ---- load default JSON (must exist) ----
-    default_json = load_gdgt_default_json()
+    try:
+        default_json = load_gdgt_default_json()
+    except FileNotFoundError:
+        default_json = groups_to_json(gdgt_meta_to_groups(initial_meta))
     default_groups = json_to_groups(default_json)
 
     # ---- load current JSON (or fall back to defaults) ----
@@ -477,8 +550,12 @@ def edit_gdgt_meta_qt(initial_meta: dict) -> dict:
         app = QtWidgets.QApplication(sys.argv or ["chromatoPy"])
         owns_app = True
 
-    dlg = _GdgtMetaDialog(groups_data, default_groups)
-    dlg.setWindowModality(ApplicationModal)
+    dlg = _GdgtMetaDialog(groups_data, default_groups, parent=parent)
+    if parent is not None:
+        dlg.setWindowModality(QtCore.Qt.WindowModality.WindowModal)
+    else:
+        dlg.setWindowModality(ApplicationModal)
+    dlg.show()
     dlg.raise_()
     dlg.activateWindow()
 
