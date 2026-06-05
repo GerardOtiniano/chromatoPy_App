@@ -104,7 +104,6 @@ def main() -> int:
         "--hidden-import=chromatopy.FID.peak_labels_editor",
         "--hidden-import=chromatopy.FID.Tools",
         "--hidden-import=matplotlib.backends.backend_qtagg",
-        "--strip",
         "--exclude-module=chromatopy.IRMS",
         "--exclude-module=chromatopy.FID.FID_General",
         "--exclude-module=chromatopy.FID.bouqueter",
@@ -135,6 +134,11 @@ def main() -> int:
         "--exclude-module=PySide6.QtVirtualKeyboardQml",
         "--exclude-module=PySide6.QtDBus",
     ]
+
+    if sys.platform.startswith("win"):
+        pyinstaller_args.append("--noupx")
+    else:
+        pyinstaller_args.append("--strip")
 
     for source, destination in data_files:
         pyinstaller_args.append(
