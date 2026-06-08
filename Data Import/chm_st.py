@@ -505,4 +505,6 @@ import glob, os
 path = '/Users/gerard/Downloads/Test_samples-selected/'
 os.chdir(path)
 for file in glob.glob("*.D"):
-    
+    df = read_chemstation_dataframe(path+file)
+    df.columns = ["time"] + [round(c) for c in df.columns[1:]]
+    df.to_csv(f"/Users/gerard/Downloads/Test_samples-selected/output/{file}.csv")
