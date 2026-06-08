@@ -92,6 +92,7 @@ def main() -> int:
         *icon_args,
         "--collect-submodules=chromatopy.gui",
         "--collect-submodules=chromatopy.utils",
+        "--copy-metadata=chromatopy",
         # "--collect-all=PySide6",
         # "--collect-all=matplotlib",
         "--collect-all=rainbow",

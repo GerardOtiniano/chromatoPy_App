@@ -3,8 +3,25 @@
 from __future__ import annotations
 
 from importlib import import_module
+from importlib.metadata import PackageNotFoundError, version
+from pathlib import Path
+import tomllib
 
-__all__ = ["hplc_integration", "hplc_to_csv", "assign_indices", "FID", "IRMS"]
+
+def _source_tree_version() -> str:
+    pyproject_path = Path(__file__).resolve().parents[2] / "pyproject.toml"
+    with pyproject_path.open("rb") as handle:
+        return tomllib.load(handle)["tool"]["poetry"]["version"]
+
+try:
+    __version__ = version("chromatopy")
+except PackageNotFoundError:  # pragma: no cover - source tree without installed metadata
+    try:
+        __version__ = _source_tree_version()
+    except Exception:
+        __version__ = "unknown"
+
+__all__ = ["hplc_integration", "hplc_to_csv", "assign_indices", "FID", "IRMS", "__version__"]
 
 name = "chromatoPy"
 

@@ -7,6 +7,17 @@ import sys
 
 os.environ.setdefault("QT_API", "pyside6")
 
+
+def _ensure_standard_streams() -> None:
+    """Provide writable streams for console-oriented libraries in windowed builds."""
+    if sys.stdout is None:
+        sys.stdout = open(os.devnull, "w", encoding="utf-8")
+    if sys.stderr is None:
+        sys.stderr = open(os.devnull, "w", encoding="utf-8")
+
+
+_ensure_standard_streams()
+
 import matplotlib
 
 matplotlib.use("QtAgg")
@@ -25,6 +36,10 @@ QLabel#appTitle {
     font-size: 30px;
     font-weight: 700;
     color: #24313a;
+}
+QLabel#appVersion {
+    font-size: 16px;
+    color: #7b8790;
 }
 QLabel#appSubtitle {
     font-size: 14px;

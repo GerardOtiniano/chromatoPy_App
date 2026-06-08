@@ -216,9 +216,10 @@ import re
 import pandas as pd
 import json
 
-def import_data(): # folder_path=None):
-    folder_path = input("Provide folder containing .txt files: ")
-    folder_path = folder_path.strip('\'"')
+def import_data(folder_path):
+    if not folder_path:
+        raise ValueError("Select the folder containing FID .txt files before running integration.")
+    folder_path = str(folder_path).strip('\'"')
 
     # List all .txt files
     txt_files = [f for f in os.listdir(folder_path) if f.lower().endswith(".txt")]
@@ -433,4 +434,3 @@ def load_json(output_path, list_samples=False, list_processed=False):
                 key.append(x)
         print(key)
     return data
-

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 
+from .. import __version__
 from ..qt_compat import (
     QApplication,
     QCheckBox,
@@ -691,9 +692,15 @@ class ChromatoPyMainWindow(QMainWindow):
         root_layout.setSpacing(18)
         self.setCentralWidget(central)
 
+        title_row = QHBoxLayout()
         title = QLabel("chromatoPy Desktop")
         title.setObjectName("appTitle")
-        root_layout.addWidget(title)
+        title_row.addWidget(title)
+        version = QLabel(f"(v{__version__})")
+        version.setObjectName("appVersion")
+        title_row.addWidget(version)
+        title_row.addStretch(1)
+        root_layout.addLayout(title_row)
 
         subtitle = QLabel(
             "A simplified entry point for data conversion and unified peak integration."
