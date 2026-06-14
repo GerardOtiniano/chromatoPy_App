@@ -517,9 +517,13 @@ class PeakIntegrationPage(ModulePage):
         configure_button.clicked.connect(self.open_configuration)
         controls.addWidget(configure_button)
 
-        run_button = QPushButton("Run Peak Integration")
-        run_button.clicked.connect(self._run_workflow)
-        controls.addWidget(run_button)
+        self.run_button = QPushButton("Run Peak Integration")
+        self.run_button.clicked.connect(self._run_workflow)
+        controls.addWidget(self.run_button)
+
+        self.manual_run_button = QPushButton("Manual Peak Integration")
+        self.manual_run_button.clicked.connect(self._run_manual_workflow)
+        controls.addWidget(self.manual_run_button)
         controls.addStretch(1)
         self._root_layout.addLayout(controls)
 
@@ -531,6 +535,7 @@ class PeakIntegrationPage(ModulePage):
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
         self._root_layout.addWidget(self.log, 1)
+        self._update_mode_controls()
         self._refresh_summary()
 
     def _append_log_message(self, message: str):
@@ -539,7 +544,11 @@ class PeakIntegrationPage(ModulePage):
 
     def _mode_changed(self, mode: str):
         self.current_config.mode = mode
+        self._update_mode_controls()
         self._refresh_summary()
+
+    def _update_mode_controls(self):
+        self.manual_run_button.setVisible(self.current_config.mode == "FID")
 
     def _refresh_summary(self):
         self.summary.setPlainText(summarize_integration_configuration(self.current_config))
@@ -573,11 +582,18 @@ class PeakIntegrationPage(ModulePage):
             return True
         return False
 
-    def _run_workflow(self):
+    def _run_manual_workflow(self):
+        self._run_workflow(manual_peak_integration=True)
+
+    def _run_workflow(self, manual_peak_integration: bool = False):
         if not self.current_config.input_folder and not self.open_configuration():
             return
         try:
-            result = run_peak_integration(self.current_config, message_callback=self._append_log_message)
+            result = run_peak_integration(
+                self.current_config,
+                message_callback=self._append_log_message,
+                manual_peak_integration=manual_peak_integration,
+            )
         except SystemExit:
             self.log.appendPlainText("Peak integration was cancelled before completion.")
             return
@@ -591,9 +607,11 @@ class PeakIntegrationPage(ModulePage):
                 details.append(f"Results: {result['results_file_path']}")
             if "figures_folder" in result:
                 details.append(f"Figures: {result['figures_folder']}")
-            self.log.appendPlainText("\n".join([f"{self.current_config.mode} integration finished."] + details))
+            workflow_name = "manual integration" if manual_peak_integration else "integration"
+            self.log.appendPlainText("\n".join([f"{self.current_config.mode} {workflow_name} finished."] + details))
         else:
-            self.log.appendPlainText(f"{self.current_config.mode} integration finished.")
+            workflow_name = "manual integration" if manual_peak_integration else "integration"
+            self.log.appendPlainText(f"{self.current_config.mode} {workflow_name} finished.")
 
 
 class PostProcessingDialog(QDialog):

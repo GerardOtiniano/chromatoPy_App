@@ -518,7 +518,7 @@ def integration_file_status(config: IntegrationConfiguration) -> dict:
     }
 
 
-def run_peak_integration(config: IntegrationConfiguration, message_callback=None):
+def run_peak_integration(config: IntegrationConfiguration, message_callback=None, manual_peak_integration: bool = False):
     refresh_integration_config(config)
     if not config.input_folder:
         raise ValueError("Select an input folder for peak integration.")
@@ -534,6 +534,7 @@ def run_peak_integration(config: IntegrationConfiguration, message_callback=None
             smoothing_window=config.smoothing_window,
             smoothing_factor=config.smoothing_factor,
             gaus_iterations=config.gaus_iterations,
+            manual_peak_integration=manual_peak_integration,
         )
 
     if config.mode == "General":

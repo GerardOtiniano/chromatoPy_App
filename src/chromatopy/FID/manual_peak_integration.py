@@ -123,6 +123,7 @@ class ManualPeakIntegrator:
         self.pk_sns = pk_sns
         self.gi = gi
         self.gaussian_fit_mode = gaussian_fit_mode
+        self.max_peaks_for_neighborhood = max_peaks_for_neighborhood
 
         self.index = 0
         self.processed_data = {}
@@ -272,7 +273,6 @@ class ManualPeakIntegrator:
     
         drawn = []
         try:
-            print("debug 1")
             if self.gaussian_fit_mode in {"multi", "both"}:
                 _, _, neigh = find_peak_neighborhood_boundaries(
                     self.x, self.y, self.peaks, self.valleys,
@@ -288,8 +288,6 @@ class ManualPeakIntegrator:
                 self.smoothing_params, self.pk_sns,
                 gi=self.gi,
                 mode=self.gaussian_fit_mode)
-            print(x_fit)
-            print(y_fit)
             poly = self.ax.fill_between(x_fit, 0, y_fit, color='red', alpha=0.4)
             drawn.append(poly)
     
