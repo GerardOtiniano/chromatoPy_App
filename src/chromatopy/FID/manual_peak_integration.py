@@ -29,7 +29,7 @@ from ..qt_compat import (
 )
 
 # ─── Peak Integration ─────────────────────────────────────────────────────────
-from .FID_Integration_functions import run_peak_integrator, smoother, baseline, find_valleys, find_peak_neighborhood_boundaries, fit_gaussians
+from .FID_Integration_functions import run_peak_integrator, smoother, hplc_style_baseline, find_valleys, find_peak_neighborhood_boundaries, fit_gaussians
     
 def run_peak_integrator_manual(data, key, gi, pk_sns, smoothing_params, max_peaks_for_neighborhood, fp, gaussian_fit_mode, minimum_peak_amplitude=None, peak_prominence=0.001):
     # Setup data
@@ -52,11 +52,11 @@ def run_peak_integrator_manual(data, key, gi, pk_sns, smoothing_params, max_peak
     mask = (x >= xmin) & (x <= xmax)
     xdata = x[mask].reset_index(drop=True)
     ydata = y[mask].reset_index(drop=True)
-    ydata = smoother(ydata, *smoothing_params)
-    ydata = pd.Series(ydata, index=xdata.index)
     ydata[ydata < 0] = 0
-    base, min_peak_amp = baseline(xdata, ydata, deg=500, max_it=1000, tol=1e-4)
-    y_bcorr = ydata - base
+    base, min_peak_amp = hplc_style_baseline(xdata, ydata)
+    y_bcorr = np.clip(ydata - base, 0, None)
+    y_bcorr = smoother(pd.Series(y_bcorr, index=xdata.index), *smoothing_params)
+    y_bcorr = pd.Series(y_bcorr, index=xdata.index)
     min_peak_amp = minimum_peak_amplitude if minimum_peak_amplitude is not None else min_peak_amp
     peak_indices, peak_properties = find_peaks(y_bcorr, height=min_peak_amp, prominence=peak_prominence)
     valleys = find_valleys(y_bcorr, peak_indices)
@@ -283,7 +283,7 @@ class ManualPeakIntegrator:
                     pk_sns=self.pk_sns)
             else:
                 neigh = [peak_idx]
-            x_fit, y_fit, _, area_ensemble, model_params = fit_gaussians(
+            x_fit, y_fit, area_smooth, area_ensemble, model_params = fit_gaussians(
                 self.x, self.y, peak_idx, neigh,
                 self.smoothing_params, self.pk_sns,
                 gi=self.gi,
@@ -292,6 +292,7 @@ class ManualPeakIntegrator:
             drawn.append(poly)
     
             self.processed_data[current_label] = {
+                'Peak Area - best fit': float(area_smooth),
                 'Peak Area - median': float(np.median(area_ensemble)),
                 'Peak Area - mean': float(np.mean(area_ensemble)),
                 'Peak Area - standard deviation': float(np.std(area_ensemble, ddof=1)),

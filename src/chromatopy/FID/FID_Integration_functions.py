@@ -5,6 +5,8 @@ from scipy.integrate import simpson
 from scipy.optimize import curve_fit
 import math
 from scipy.integrate import simpson
+from scipy import sparse
+from scipy.sparse.linalg import spsolve
 from pybaselines import Baseline
 import warnings 
 import pandas as pd
@@ -36,6 +38,77 @@ def baseline( x, y, deg=5, max_it=1000, tol=1e-4):
     mask = params_mask['mask'] #  Mask for regions of signal without peaks
     min_peak_amp = (np.std(y[mask]))*2*3 # 2 sigma times 3
     return base, min_peak_amp # return base
+
+
+def asls_baseline(y, lam=1e6, p=0.001, max_iter=50, conv_thresh=1e-6, return_info=True):
+    """Asymmetric Least Squares baseline matching the HPLC integration path."""
+    y = np.asarray(y, dtype=float).copy()
+    n = y.size
+    if n < 3:
+        b = np.maximum(y, 0.0)
+        info = {'iterations': 0, 'converged': True, 'last_delta': 0.0, 'weights': np.ones_like(y)}
+        return (b, info) if return_info else b
+
+    nan_mask = ~np.isfinite(y)
+    if nan_mask.any():
+        xi = np.arange(n)
+        finite_mask = ~nan_mask
+        if finite_mask.any():
+            y[nan_mask] = np.interp(xi[nan_mask], xi[finite_mask], y[finite_mask])
+        else:
+            y[:] = 0.0
+
+    diagonals = [np.ones(n - 2), -2 * np.ones(n - 2), np.ones(n - 2)]
+    offsets = [0, 1, 2]
+    d_matrix = sparse.diags(diagonals, offsets, shape=(n - 2, n), format='csc')
+    penalty = (d_matrix.T @ d_matrix).tocsc()
+
+    weights = np.ones(n)
+    baseline_values = y.copy()
+    delta = 0.0
+    for iteration in range(1, max_iter + 1):
+        weight_matrix = sparse.diags(weights, 0, shape=(n, n), format='csc')
+        lhs = weight_matrix + lam * penalty
+        rhs = weights * y
+        next_baseline = spsolve(lhs, rhs)
+
+        residual = y - next_baseline
+        weights = p * (residual > 0.0) + (1.0 - p) * (residual <= 0.0)
+        weights = np.clip(weights, 1e-6, 1.0)
+
+        denominator = np.linalg.norm(baseline_values) + 1e-12
+        delta = np.linalg.norm(next_baseline - baseline_values) / denominator
+        baseline_values = next_baseline
+        if delta < conv_thresh:
+            info = {'iterations': iteration, 'converged': True, 'last_delta': float(delta), 'weights': weights}
+            return (np.maximum(baseline_values, 0.0), info) if return_info else np.maximum(baseline_values, 0.0)
+
+    info = {'iterations': max_iter, 'converged': False, 'last_delta': float(delta), 'weights': weights}
+    return (np.maximum(baseline_values, 0.0), info) if return_info else np.maximum(baseline_values, 0.0)
+
+
+def hplc_style_baseline(x, y):
+    """Return the same ASLS baseline and peak threshold used by HPLC integration."""
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    dx = np.median(np.diff(x)) if len(x) > 1 else 1.0
+    span = (x.max() - x.min()) if len(x) else 1.0
+
+    lam = 1e6 * max(1.0, (span / max(dx, 1e-6)) / 200.0)
+    p = 0.01
+
+    baseline_values, _ = asls_baseline(y, lam=lam, p=p, max_iter=50, conv_thresh=1e-6, return_info=True)
+    baseline_values = np.maximum(baseline_values, 0.0)
+    corrected = np.clip(y - baseline_values, 0, None)
+
+    diff = np.diff(corrected)
+    mad = 1.4826 * np.median(np.abs(diff - np.median(diff))) if diff.size else 0.0
+    sigma = (mad / np.sqrt(2.0)) if (mad > 0 and np.isfinite(mad)) else 0.0
+    dynamic_range = np.nanpercentile(y, 99) - np.nanpercentile(y, 1)
+    absolute_floor = 0.005 * dynamic_range
+    relative_floor = 0.02 * np.nanmedian(baseline_values) if np.isfinite(np.nanmedian(baseline_values)) else 0.0
+    min_peak_amp = max(5.0 * sigma, absolute_floor, relative_floor)
+    return baseline_values, float(min_peak_amp * 3)
 
 def find_valleys(y, peaks, peak_oi=None):
     valleys = []
@@ -830,16 +903,16 @@ def run_peak_integrator(data, key, gi, pk_sns, smoothing_params, max_peaks_for_n
     xdata = xdata[mask].reset_index(drop=True)
     ydata = ydata[mask].reset_index(drop=True)
     
-    # Signal processing
-    ydata = smoother(ydata, smoothing_params[0], smoothing_params[1])
-    ydata = pd.Series(ydata, index=xdata.index)
     ydata[ydata<0] = 0
     peak_timing = data['Integration Metadata']['peak dictionary'].values()
     data['Samples'][key]['Processed Data'] = {}
     
-    base, min_peak_amp = baseline(xdata, ydata, deg=5, max_it=1000, tol=1e-4)
-    y_bcorr = ydata-base
+    # Match the HPLC/manual-FID background correction path: ASLS baseline,
+    # clip negative corrected signal, then smooth for peak detection/fitting.
+    base, min_peak_amp = hplc_style_baseline(xdata, ydata)
     y_bcorr = np.clip(ydata - base, 0, None)
+    y_bcorr = smoother(pd.Series(y_bcorr, index=xdata.index), smoothing_params[0], smoothing_params[1])
+    y_bcorr = pd.Series(y_bcorr, index=xdata.index)
     min_peak_amp = minimum_peak_amplitude if minimum_peak_amplitude is not None else min_peak_amp
     peak_indices, peak_properties = find_peaks(y_bcorr, height=min_peak_amp, prominence=peak_prominence)
     used_peaks = set()
@@ -926,4 +999,3 @@ def run_peak_integrator(data, key, gi, pk_sns, smoothing_params, max_peaks_for_n
     plt.savefig(str(fp)+f"/{key}.png", dpi=300)
     plt.close()
     return data
-

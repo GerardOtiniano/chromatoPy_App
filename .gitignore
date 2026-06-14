@@ -179,11 +179,12 @@ __pycache__/
 *.pyc
 .DS_Store
 .venv/
-.update_version_number.txt
+
+update_version_number.txt
 
 # Cursor  
 #  Cursor is an AI-powered code editor.`.cursorignore` specifies files/directories to 
 #  exclude from AI features like autocomplete and code analysis. Recommended for sensitive data
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
-.cursorindexingignoreupdate_version_number.txt
+.cursorindexing
