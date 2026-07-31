@@ -30,15 +30,7 @@ from ..qt_compat import (
 )
 
 # ─── Peak Integration ─────────────────────────────────────────────────────────
-from .FID_Integration_functions import (
-    build_processed_peak_result,
-    find_peak_neighborhood_boundaries,
-    find_valleys,
-    fit_gaussians,
-    hplc_style_baseline,
-    run_peak_integrator,
-    smoother,
-)
+from .FID_Integration_functions import run_peak_integrator, smoother, hplc_style_baseline, find_valleys, find_peak_neighborhood_boundaries, fit_gaussians
 
 def run_peak_integrator_manual(data, key, gi, pk_sns, smoothing_params, max_peaks_for_neighborhood, fp, gaussian_fit_mode, minimum_peak_amplitude=None, peak_prominence=0.001):
     # Setup data
@@ -93,24 +85,20 @@ def run_peak_integrator_manual(data, key, gi, pk_sns, smoothing_params, max_peak
     if app is None:
         app = QApplication(sys.argv)
         owns_app = True
-
+    
     if owns_app:
-        peak_selector.fig.show()
         run_application(app)
     else:
-        peak_selector.fig.show()
-        peak_selector.fig.canvas.draw_idle()
-        QApplication.processEvents()
         loop = QEventLoop()
         peak_selector.on_done = loop.quit
         peak_selector.fig.canvas.mpl_connect("close_event", lambda event: loop.quit())
         loop.exec()
-
-
+    
+    
     if peak_selector.force_exit:
         tqdm.write("Manual integration was forcefully exited by the user.")
         raise SystemExit  # or return None, or raise a custom exception
-
+    
     # Save output
     data['Samples'][key]['Processed Data'] = peak_selector.processed_data
     return data
@@ -168,12 +156,12 @@ class ManualPeakIntegrator:
         self.finish_button = Button(btn_ax, "Finished")
         # Now finish accepts the event
         self.finish_button.on_clicked(self.finish)
-
+        
         # Exit button
         exit_ax = self.fig.add_axes([0.82, 0.94, 0.15, 0.05])
         self.exit_button = Button(exit_ax, "Exit")
         self.exit_button.on_clicked(self.exit_program)
-
+        
         # Flag for termination
         self.force_exit = False
 
@@ -192,7 +180,77 @@ class ManualPeakIntegrator:
             if app is not None:
                 app.quit()
         plt.close(self.fig)
-
+        
+    # def onclick(self, event):
+    #     if event.inaxes != self.ax:
+    #         return
+    #     # Check if peaks are selected
+    #     if self.index >= len(self.labels):
+    #        msg = "[Manual] All peaks have already been selected. No more selections expected."
+    #        try:
+    #            tqdm.write(msg)
+    #        except Exception:
+    #            print(msg)
+    #        # (optional) stop processing further clicks
+    #        try:
+    #            self.fig.canvas.mpl_disconnect(self.cid_click)
+    #        except Exception:
+    #            pass
+    #        return
+        
+    #     click_time = event.xdata
+    #     peak_times = self.x.to_numpy()[self.peaks]
+    #     dists = np.abs(peak_times - click_time)
+    #     best = dists.argmin()
+   
+    #     # if the nearest real peak is > tolerance, treat as “no peak”
+    #     if dists[best] <= self.click_tolerance:
+    #         peak_idx = int(self.peaks[best])
+    #     else:
+    #         # no valid peak → grey dashed line & record NaN
+    #         line = self.ax.axvline(click_time, color='grey', linestyle='--')
+    #         self.artists_stack.append([line])
+    #         self.processed_data[self.labels[self.index]] = {'Values': [np.nan]}
+    #         self._advance_prompt()
+    #         return
+    #     drawn = []
+    #     try:
+    #         if self.gaussian_fit_mode in {"multi","both"}:
+    #             _, _, neigh = find_peak_neighborhood_boundaries(
+    #                 self.x, self.y, self.peaks, self.valleys,
+    #                 peak_idx, self.pk_sns,
+    #                 peak_properties=self.peak_properties,
+    #                 gi=self.gi,
+    #                 smoothing_params=self.smoothing_params,
+    #                 pk_sns=self.pk_sns)
+    #         else:
+    #             neigh = [peak_idx]
+    #         # print("debug 1")   
+    #         x_fit, y_fit, _, area_ensemble, model_params = fit_gaussians(
+    #             self.x, self.y, peak_idx, neigh,
+    #             self.smoothing_params, self.pk_sns,
+    #             gi=self.gi,
+    #             mode=self.gaussian_fit_mode)
+    #         # print("debug 2")
+    #         poly = self.ax.fill_between(x_fit, 0, y_fit, color='red', alpha=0.4)
+    #         drawn.append(poly)
+    #         self.processed_data[self.labels[self.index]] = {
+    #             'Peak Area - median': np.median(area_ensemble),
+    #             'Peak Area - mean': np.mean(area_ensemble),
+    #             'Peak Area - standard deviation': np.std(area_ensemble, ddof=1),
+    #             'Peak Area - number of ensemble members': len(area_ensemble),
+    #             'Model Parameters': model_params,
+    #             'Retention Time': float(click_time)}
+   
+    #     except Exception as e:
+    #         tqdm.write(f"[Manual Warning] Failed to fit {self.labels[self.index]}: {e}")
+    #         line = self.ax.axvline(click_time, color='grey', linestyle='--')
+    #         drawn.append(line)
+    #         self.processed_data[self.labels[self.index]] = {'Values':[np.nan]}
+   
+    #     # save for undo, then advance
+    #     self.artists_stack.append(drawn)
+    #     self._advance_prompt()
     def _fit_color(self, model_params):
         model_name = ""
         if isinstance(model_params, dict):
@@ -238,7 +296,7 @@ class ManualPeakIntegrator:
     def onclick(self, event):
         if event.inaxes != self.ax:
             return
-
+    
         if self.index >= len(self.labels):
             msg = "[Manual] All peaks have already been selected. No more selections expected."
             try:
@@ -246,10 +304,10 @@ class ManualPeakIntegrator:
             except Exception:
                 print(msg)
             return
-
+    
         # Safe current label (use after the guard above)
         current_label = self.labels[self.index]
-
+    
         click_time = event.xdata
         if click_time is None:
             return
@@ -264,14 +322,14 @@ class ManualPeakIntegrator:
             self._record_no_peak(current_label, click_time)
             return
         best = dists.argmin()
-
+    
         # if the nearest real peak is > tolerance, treat as “no peak”
         if dists[best] > self.click_tolerance:
             self._record_no_peak(current_label, click_time)
             return
-
+    
         peak_idx = int(self.peaks[best])
-
+    
         drawn = []
         try:
             if self.gaussian_fit_mode in {"multi", "both", "asymmetric_or_multi"}:
@@ -286,31 +344,36 @@ class ManualPeakIntegrator:
                     neigh = [peak_idx]
             else:
                 neigh = [peak_idx]
-            x_fit, y_fit, area_smooth, model_params = fit_gaussians(
+            x_fit, y_fit, area_smooth, area_ensemble, model_params = fit_gaussians(
                 self.x, self.y, peak_idx, neigh,
                 self.smoothing_params, self.pk_sns,
                 gi=self.gi,
-                mode=self.gaussian_fit_mode,
-                valleys=self.valleys)
+                mode=self.gaussian_fit_mode)
             poly = self.ax.fill_between(x_fit, 0, y_fit, color=self._fit_color(model_params), alpha=0.4)
             drawn.append(poly)
             label_artist = self._add_peak_label(current_label, x_fit, y_fit)
             if label_artist is not None:
                 drawn.append(label_artist)
-
-            self.processed_data[current_label] = build_processed_peak_result(
-                area_smooth, model_params, click_time, x_fit, y_fit)
-
+    
+            self.processed_data[current_label] = {
+                'Peak Area - best fit': float(area_smooth),
+                'Peak Area - median': float(np.median(area_ensemble)),
+                'Peak Area - mean': float(np.mean(area_ensemble)),
+                'Peak Area - standard deviation': float(np.std(area_ensemble, ddof=1)),
+                'Peak Area - number of ensemble members': int(len(area_ensemble)),
+                'Model Parameters': model_params,
+                'Retention Time': float(click_time),}
+    
         except Exception as e:
             tqdm.write(f"[Manual Warning] Failed to fit {current_label}: {e}")
             line = self.ax.axvline(click_time, color='grey', linestyle='--')
             drawn.append(line)
             self.processed_data[current_label] = {'Values': [np.nan]}
-
+    
         # save for undo, then advance
         self.artists_stack.append(drawn)
         self._advance_prompt()
-
+    
         # If that was the last label, optionally inform user & disconnect clicks
         if self.index >= len(self.labels):
             done_msg = "[Manual] All peaks selected. You can press Finished."
@@ -318,7 +381,7 @@ class ManualPeakIntegrator:
                 tqdm.write(done_msg)
             except Exception:
                 print(done_msg)
-
+    
     def _advance_prompt(self):
         """increment index, update the onscreen prompt, redraw."""
         self.index += 1

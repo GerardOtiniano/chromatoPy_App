@@ -44,12 +44,12 @@ def integration(
         # Data categorization
         categorized=None,
         folder_path=None,
-        # Peak deconvolution 
+        # Peak deconvolution
         gaussian_fit_mode='single',  manual_peak_integration=False,
         fid_window_limits=None,
         # Peak integration parameters
-        peak_neighborhood_n=3, smoothing_window=5, 
-        smoothing_factor=3, gaus_iterations=1000, minimum_peak_amplitude=None, maximum_peak_amplitude=None, 
+        peak_neighborhood_n=3, smoothing_window=5,
+        smoothing_factor=3, gaus_iterations=1000, minimum_peak_amplitude=None, maximum_peak_amplitude=None,
         peak_boundary_derivative_sensitivity=0.001, peak_prominence=0.01):
     """
     Main integration function for processing chromatographic samples.
@@ -68,7 +68,7 @@ def integration(
     - peak_prominence: Prominence threshold for peak finding.
     - peak_labels: If True, load peak label config from 'peak_labels.json'
     """
-    
+
     # Handle predefined peak labels
     if peak_labels and manual_peak_integration:
         json_path = os.path.join(os.path.dirname(__file__), "peak_labels.json")
@@ -78,7 +78,7 @@ def integration(
         else:
             raise FileNotFoundError(f"Expected peak_labels.json in {json_path}")
     else: peak_labels_data=None
-    
+
     # Handle pre-categorized Data
     if categorized is not None:
         tqdm.write("Pre-categorized data.")
@@ -86,7 +86,7 @@ def integration(
         unprocessed = result["unprocessed_samples"]
         if not unprocessed:
             return
-        
+
         data = result['data_dict']
         time_column = result["time_column"]
         signal_column = result["signal_column"]
@@ -131,30 +131,30 @@ def integration(
             subset, time_column, signal_column,
             folder_path, output_path, figures_path,
             selection_method, gaussian_fit_mode,
-            peak_neighborhood_n, smoothing_window, 
+            peak_neighborhood_n, smoothing_window,
             smoothing_factor, gaus_iterations,
             minimum_peak_amplitude, maximum_peak_amplitude, peak_boundary_derivative_sensitivity,
             peak_prominence, manual = manual_peak_integration,
             peak_labels=peak_labels_data,
             fid_window_limits=fid_window_limits)
-    
+
 def print_no_samples_to_process():
         tqdm.write("All samples in this directory have been processed.")
         tqdm.write("To re-process sample entries, delete the samples with:")
         tqdm.write("    chromatopy.FID.delete_samples()")
         tqdm.write("Then rerun:")
         tqdm.write("    chromatopy.FID.integration()")
-    
-def FID_integration_backend(data, time_column, signal_column, folder_path, 
+
+def FID_integration_backend(data, time_column, signal_column, folder_path,
                             output_path, figures_path, sm, gaussian_fit_mode,
-                            peak_neighborhood_n=3, smoothing_window=35, smoothing_factor=3, 
-                            gaus_iterations=4000, minimum_peak_amplitude=None, maximum_peak_amplitude=None, 
-                            peak_boundary_derivative_sensitivity=0.01, peak_prominence=1, 
+                            peak_neighborhood_n=3, smoothing_window=35, smoothing_factor=3,
+                            gaus_iterations=4000, minimum_peak_amplitude=None, maximum_peak_amplitude=None,
+                            peak_boundary_derivative_sensitivity=0.01, peak_prominence=1,
                             manual=False, peak_labels=None, fid_window_limits=None):
-    
+
     # Get unprocessed samples only
     unprocessed_keys = [k for k in data["Samples"].keys() if not is_processed_sample(data["Samples"][k])]
-    
+
     # Identify peak locations
     if manual and peak_labels is not None:
         tqdm.write("Using stored peak labels for manual integration.")
@@ -164,30 +164,30 @@ def FID_integration_backend(data, time_column, signal_column, folder_path,
             "time_column": time_column,
             "signal_column": signal_column}
     else:
-        tqdm.write("Click the location of peaks and enter the chain length of interest (e.g., C22).\nUse 'shift+delete' to remove the last peak.\n'Select 'Finished' once satisfied.")
+        tqdm.write("Click the location of peaks and enter the chain length of interest (e.g., C22).\nUse 'd' to remove the last peak.\n'Select 'Finished' once satisfied.")
         # app = QApplication.instance() or QApplication(sys.argv)
         # first_key = unprocessed_keys[0]
         # time = data['Samples'][first_key]['Raw Data'][time_column]
         # signal = data['Samples'][first_key]['Raw Data'][signal_column]
-    
+
         # if sm == "nearest":
         #     peak_positions, _ = find_peaks(signal)
         # elif sm == "click":
         #     peak_positions = None
-    
+
         # peak_identifier = FID_Peak_ID(x=time, y=signal, selection_method=sm, peak_positions=peak_positions)
         # app.exec_()
-        
+
         app = QApplication.instance()
         owns_app = False
         if app is None:
             app = QApplication(sys.argv)
             owns_app = True  # we created it; safe to run/quit
-        
+
         first_key = unprocessed_keys[0]
         time = data['Samples'][first_key]['Raw Data'][time_column]
         signal = data['Samples'][first_key]['Raw Data'][signal_column]
-        
+
         if sm == "nearest":
             peak_positions, _ = find_peaks(
                 signal,
@@ -196,7 +196,7 @@ def FID_integration_backend(data, time_column, signal_column, folder_path,
             )
         elif sm == "click":
             peak_positions = None
-        
+
         peak_identifier = FID_Peak_ID(
             x=time,
             y=signal,
@@ -204,7 +204,7 @@ def FID_integration_backend(data, time_column, signal_column, folder_path,
             peak_positions=peak_positions,
             owns_app=owns_app,
             axis_limits=fid_window_limits)
-        
+
         if owns_app:
             # Script/terminal case: we own the event loop
             run_application(app)
@@ -217,17 +217,17 @@ def FID_integration_backend(data, time_column, signal_column, folder_path,
             # User closed the window without pressing Finish → cancel/abort
             tqdm.write("Integration cancelled: window closed without pressing 'Finish'.")
             raise SystemExit
-    
+
         data['Integration Metadata'] = {
             "peak dictionary": peak_identifier.result,
             "time_column": time_column,
             "signal_column": signal_column}
-    
+
     for key in tqdm(unprocessed_keys, desc="Integrating samples", unit="sample", mininterval=0, maxinterval=0):
         if "Integratoin Result" in data['Samples'][key].keys():
             tqdm.write(f"{key} already processed")
             continue
-    
+
         if manual:
             run_peak_integrator_manual(data, key, gi=gaus_iterations,
                                        pk_sns=peak_boundary_derivative_sensitivity,
@@ -253,24 +253,24 @@ def FID_integration_backend(data, time_column, signal_column, folder_path,
                 existing_data["Samples"][sample_name] = sample_data
         else:
             existing_data = data
-    
+
         save_json({'data_dict':existing_data}, output_path)
         output_csv(existing_data, output_path)
     # return data
-    
+
 def output_csv(data, output_directory):
     """
     Generate two CSV files:
     1. output_peak_areas.csv: contains median peak areas per sample.
     2. output_retention_times.csv: contains retention times per sample.
-    
+
     Parameters
     ----------
     data : dict
         Data dictionary containing processed chromatographic data.
     output_directory : str
         Directory to save the output CSVs.
-    
+
     Returns
     -------
     df_areas : pandas.DataFrame
@@ -283,12 +283,12 @@ def output_csv(data, output_directory):
     for sample in data['Samples'].values():
         processed = sample.get("Processed Data", {})
         all_peaks.update(processed.keys())
-    
+
     all_peaks = sorted(all_peaks)
-    
+
     peak_area_rows = []
     retention_time_rows = []
-    
+
     for sample_name, sample in data['Samples'].items():
         row_area = {"Lab ID": sample_name}
         row_ret = {"Lab ID": sample_name}
@@ -303,11 +303,11 @@ def output_csv(data, output_directory):
                 row_ret[peak] = np.nan
         peak_area_rows.append(row_area)
         retention_time_rows.append(row_ret)
-    
+
     # Convert to DataFrames
     df_areas = pd.DataFrame(peak_area_rows)
     df_ret_times = pd.DataFrame(retention_time_rows)
-    
+
     # Save as CSVs
     os.makedirs(output_directory, exist_ok=True)
     area_path = os.path.join(output_directory, "output_peak_areas.csv")
@@ -418,7 +418,7 @@ def load_json(output_path, list_samples=False, list_processed=False):
 #     """
 #     output_path = os.path.join(folder_path, "chromatoPy output")
 #     figures_path = os.path.join(output_path, "Figures")
-    
+
 #     os.makedirs(output_path, exist_ok=True)
 #     os.makedirs(figures_path, exist_ok=True)
 
@@ -429,7 +429,7 @@ def clean_for_json(obj):
         return obj.item()
     elif isinstance(obj, (np.ndarray, pd.Series, list, tuple)):
         return [clean_for_json(el) for el in obj]
-    elif isinstance(obj, pd.DataFrame): 
+    elif isinstance(obj, pd.DataFrame):
         return obj.to_dict(orient="list")
     elif isinstance(obj, dict):
         return {str(k): clean_for_json(v) for k, v in obj.items()}
@@ -439,7 +439,7 @@ def clean_for_json(obj):
             return obj
         except (TypeError, OverflowError):
             return str(obj)
-        
+
 # def parse_metadata_block(raw_text):
 #     """
 #     Parse chromatogram metadata string into a nested dictionary.
@@ -471,7 +471,7 @@ def clean_for_json(obj):
 #             #tqdm.write("Skipping malformed line:", line)
 
 #     return result
- 
+
 def merge_existing_jsons(data, output_path):
     """
     Function Identifies previously processed data (.json files) in working
@@ -581,13 +581,13 @@ def merge_existing_jsons(data, output_path):
 #         # self.finish_button = Button(self.button_ax, 'Finished')
 #         # self.finish_button.on_clicked(self.finish)
 #         self.fig.canvas.mpl_connect("close_event", self._on_close)
-        
+
 #         # def finish(self, event):
 #         #     # Store results for the caller
 #         #     self.result = dict(self.peak_dict)
 #         #     # Close the plot
 #         #     plt.close(self.fig)
-        
+
 #         #     # Only quit the app if THIS code created/owns it
 #         #     if self._owns_app:
 #         #         app = QApplication.instance()
@@ -606,7 +606,7 @@ def merge_existing_jsons(data, output_path):
 #         def _on_close(self, event):
 #             if not self.finished:
 #                 self.closed_without_finish = True
-                
+
 #         # Connect events
 #         self.fig.canvas.mpl_connect('button_press_event', self.on_click)
 #         self.fig.canvas.mpl_connect('key_press_event', self.on_key)
@@ -617,7 +617,7 @@ def merge_existing_jsons(data, output_path):
 #         self.fig.canvas.setFocusPolicy(Qt.StrongFocus)
 #         self.fig.canvas.setFocus()
 #         def _on_close(self, event):
-        
+
 #     def on_click(self, event):
 #             if event.inaxes != self.ax:
 #                 return
@@ -734,16 +734,16 @@ def merge_existing_jsons(data, output_path):
 #         # Store results and mark as finished
 #         self.result = dict(self.peak_dict)
 #         self.finished = True
-    
+
 #         # Close the figure
 #         plt.close(self.fig)
-    
+
 #         # Only quit the Qt loop if WE created it
 #         if self._owns_app:
 #             app = QApplication.instance()
 #             if app is not None:
 #                 app.quit()
-    
+
 class FID_Peak_ID:
     def __init__(self, x, y, selection_method, peak_positions=None, owns_app=False, axis_limits=None):
         self._owns_app = owns_app
@@ -882,20 +882,36 @@ class FID_Peak_ID:
             self.lines.pop().remove()
             self.fig.canvas.draw_idle()
 
+    # def on_key(self, event):
+    #     qt_ev = getattr(event, "guiEvent", None)
+    #     if not qt_ev:
+    #         return
+    #     keycode = qt_ev.key()
+    #     if (qt_ev.modifiers() & ShiftModifier) and keycode in (Key_Backspace, Key_Delete):
+    #         if not self.peak_order:
+    #             return
+    #         self.lines.pop().remove()
+    #         self.labels.pop().remove()
+    #         last_label = self.peak_order.pop()
+    #         x_removed = self.peak_dict.pop(last_label)
+    #         self.positions.discard(x_removed)
+    #         self.fig.canvas.draw_idle()
+
     def on_key(self, event):
-        qt_ev = getattr(event, "guiEvent", None)
-        if not qt_ev:
+        if (event.key or "").lower() != "d":
             return
-        keycode = qt_ev.key()
-        if (qt_ev.modifiers() & ShiftModifier) and keycode in (Key_Backspace, Key_Delete):
-            if not self.peak_order:
-                return
-            self.lines.pop().remove()
-            self.labels.pop().remove()
-            last_label = self.peak_order.pop()
-            x_removed = self.peak_dict.pop(last_label)
-            self.positions.discard(x_removed)
-            self.fig.canvas.draw_idle()
+
+        if not self.peak_order:
+            return
+
+        self.lines.pop().remove()
+        self.labels.pop().remove()
+
+        last_label = self.peak_order.pop()
+        x_removed = self.peak_dict.pop(last_label)
+        self.positions.discard(x_removed)
+
+        self.fig.canvas.draw_idle()
 
     def update_limits(self, _):
         try:
@@ -912,7 +928,7 @@ class FID_Peak_ID:
             try:
                 self.fig.canvas.release_mouse(self.ax)
             except Exception:
-                pass 
+                pass
 
 class LabelDialog(QDialog):
     def __init__(self, prompt="Enter peak label:", initial="peak", parent=None):
