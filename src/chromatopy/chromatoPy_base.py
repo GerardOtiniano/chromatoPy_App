@@ -1742,10 +1742,25 @@ class GDGTAnalyzer:
         # Store additional info for peak selection, etc.
         self.axs_to_traces[ax] = trace
         self.datasets[trace_idx] = (x_values, y_bcorr)
-        if self.max_peak_amp is not None:
-            peaks_total, properties = find_peaks(y_filtered, height=(min_peak_amp, self.max_peak_amp), prominence=self.pk_pr)
+        if self.max_peak_amp is not None: # Scenarios for identifying peaks with some amplitude ceiling
+            peaks_total, properties = find_peaks(y_filtered, height=(min_peak_amp, self.max_peak_amp), prominence=self.pk_pr) # First identification of peaks in signal
         else:
             peaks_total, properties = find_peaks(y_filtered, height=min_peak_amp, prominence=self.pk_pr)
+            
+        """
+        Use 3rd derivative to update peak list sets before continuing
+        - need to update peaks_total and properties
+        - check if peaks are reidentified later during peak integration
+        - check why peak_total is saved twice (in setup_subplot())
+        
+        Suggested steps
+        1. Plot signal, peaks identified by find_peaks, peaks identified by 3rd derivative
+            1.1 Use centers of find_peaks() and 3rd derivative estimated centers to check for overlap
+        2. Identify method to find common peaks
+        3. Add unique peaks from 3rd derivative to peaks_total and properties (update found peaks and properties)
+            3.1 Double check that peaks_total, properties as well as the 3rd derivative outputs are the same format (e.g., indices)
+            3.2 Filter out peaks identified using 3rd using minimum peak amplitude
+        """
         self.peaks[trace] = peaks_total
         self.peak_properties[trace] = properties
         self.peaks_indices[trace_idx] = peaks_total
