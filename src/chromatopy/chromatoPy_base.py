@@ -15,9 +15,15 @@ from scipy.sparse.linalg import spsolve
 from pybaselines import Baseline
 import warnings
 from .qt_compat import QApplication, QEventLoop, QTimer
+
 warnings.simplefilter("always")
+
+
 class GDGTAnalyzer:
-    def __init__(self, df, traces, window_bounds, GDGT_dict, gaus_iterations, sample_name, is_reference, max_peaks, sw, sf, pk_sns, pk_pr, max_PA, min_PA=None, reference_peaks=None, cheers=False, debug=False, time_column="RT (min)", schema_type="multi_channel", use_asymmetric_peak_integration=False, enable_peak_deconvolution=True, clip_negative_amplitudes=True, message_callback=None):
+    def __init__(self, df, traces, window_bounds, GDGT_dict, gaus_iterations, sample_name, is_reference, max_peaks, sw,
+                 sf, pk_sns, pk_pr, max_PA, min_PA=None, reference_peaks=None, cheers=False, debug=False,
+                 time_column="RT (min)", schema_type="multi_channel", use_asymmetric_peak_integration=False,
+                 enable_peak_deconvolution=True, clip_negative_amplitudes=True, message_callback=None):
         self.fig, self.axs = None, None
         self.df = df
         self.traces = traces
@@ -43,13 +49,13 @@ class GDGTAnalyzer:
         self.smoothing_params = [sw, sf]
         self.pk_sns = pk_sns
         self.pk_pr = pk_pr
-        self.t_pressed = False # Flag to track if 't' was pressed
+        self.t_pressed = False  # Flag to track if 't' was pressed
         self.called = False
         self.max_peak_amp = max_PA
         self.min_peak_amp = min_PA
         self.debug = debug
         self.cheers = cheers
-        self.baseline_threshold=0
+        self.baseline_threshold = 0
         self.time_column = time_column
         self.schema_type = schema_type
         self.use_asymmetric_peak_integration = use_asymmetric_peak_integration
@@ -63,7 +69,6 @@ class GDGTAnalyzer:
         self._status_text = None
         self.b_pressed = False
         self.no_baseline_lines = {}
-
 
     def run(self):
         """
@@ -178,7 +183,7 @@ class GDGTAnalyzer:
             amp = params[i]
             cen = params[i + 1]
             wid = params[i + 2]
-            y += amp * np.exp(-((x - cen) ** 2) / (2 * wid**2))
+            y += amp * np.exp(-((x - cen) ** 2) / (2 * wid ** 2))
         return y
 
     # def gaussian_decay(self, x, amp, cen, wid, dec):
@@ -222,11 +227,11 @@ class GDGTAnalyzer:
         numpy.ndarray
             The values of the Gaussian function evaluated at each x-value.
         """
-        return amp * np.exp(-((x - cen) ** 2) / (2 * wid**2))
+        return amp * np.exp(-((x - cen) ** 2) / (2 * wid ** 2))
 
     def skewed_gaussian(self, x, amp, cen, sigma, alpha):
         z = (x - cen) / (sigma * np.sqrt(2))
-        return amp * np.exp(-z**2) * (1 + erf(alpha * z))
+        return amp * np.exp(-z ** 2) * (1 + erf(alpha * z))
 
     def estimate_initial_gaussian_params(self, x, y, peak):
         """
@@ -310,7 +315,7 @@ class GDGTAnalyzer:
         valleys = []
         if peak_oi == None:
             for i in range(1, len(peaks)):
-                valley_point = np.argmin(y[peaks[i - 1] : peaks[i]]) + peaks[i - 1]
+                valley_point = np.argmin(y[peaks[i - 1]: peaks[i]]) + peaks[i - 1]
                 valleys.append(valley_point)
         # else:
         #     poi = np.where(peaks == peak_oi)[0][0]
@@ -334,7 +339,6 @@ class GDGTAnalyzer:
                 right_valley = np.argmin(y[peaks[poi]:peaks[poi + 1]]) + peaks[poi]
                 valleys.extend([left_valley, right_valley])
         return valleys
-
 
     def _safe_for_json(self, v):
         # numeric scalars → float; numpy scalars → float; everything else → str if not JSONable
@@ -364,8 +368,6 @@ class GDGTAnalyzer:
             warnings.warn(self._fmt(dict(level="ERROR", **kv)), stacklevel=2)
         except Exception:
             warnings.warn("[chromatoPy DBG] <logging failed>", stacklevel=2)
-
-
 
     def find_peak_neighborhood_boundaries(self, x, y_smooth, peaks, valleys,
                                           peak_idx, ax, max_peaks, trace):
@@ -407,7 +409,7 @@ class GDGTAnalyzer:
             return (aL <= bR - eps) and (bL <= aR - eps)
 
         # Cache: extended boundaries for peaks we touch
-        extended_boundaries = {}   # peak_idx_in_x -> (xL, xR)
+        extended_boundaries = {}  # peak_idx_in_x -> (xL, xR)
 
         def fit_extend_peak(p):
             """Fit single Gaussian to local window around peak p; return (xL, xR) extended boundaries."""
@@ -437,7 +439,7 @@ class GDGTAnalyzer:
 
             # Clamp window by nearest valleys around this peak
             dx_med = np.median(np.diff(x_arr)) if len(x_arr) > 1 else 0.01
-            v_left  = max([v for v in valleys if v < p], default=l_lim)
+            v_left = max([v for v in valleys if v < p], default=l_lim)
             v_right = min([v for v in valleys if v > p], default=r_lim)
             l_lim = max(l_lim, v_left)
             r_lim = min(r_lim, v_right)
@@ -477,8 +479,8 @@ class GDGTAnalyzer:
                           height=height, mean=mean, stddev=stddev)
 
             # Fit Gaussian with bounds
-            lb = [0.0, xw.min(), dx_med]                      # amp>=0, center>=min, width>=dx_med
-            ub = [np.inf, xw.max(), (xw.max() - xw.min())/2.] # width bounded by half window
+            lb = [0.0, xw.min(), dx_med]  # amp>=0, center>=min, width>=dx_med
+            ub = [np.inf, xw.max(), (xw.max() - xw.min()) / 2.]  # width bounded by half window
             try:
                 popt, _ = curve_fit(self.individual_gaussian, xw, yw,
                                     p0=[height, mean, stddev],
@@ -489,7 +491,7 @@ class GDGTAnalyzer:
                     popt, _ = curve_fit(self.individual_gaussian, xw, yw,
                                         p0=[height, mean, stddev],
                                         bounds=(lb, ub),
-                                        maxfev=self.gi*5)
+                                        maxfev=self.gi * 5)
                     self._dbg(refit_success=True, p=int(p))
                 except Exception as e2:
                     self._err(skip_peak_fit_fail=True, p=int(p),
@@ -574,14 +576,15 @@ class GDGTAnalyzer:
         Rs = []
         for p in included:
             Lp, Rp = fit_extend_peak(p)
-            Ls.append(Lp); Rs.append(Rp)
+            Ls.append(Lp);
+            Rs.append(Rp)
 
         if len(Ls) == 0:
             # fallback to POI interval
-            neighborhood_left_boundary  = poi_L
+            neighborhood_left_boundary = poi_L
             neighborhood_right_boundary = poi_R
         else:
-            neighborhood_left_boundary  = float(min(Ls))
+            neighborhood_left_boundary = float(min(Ls))
             neighborhood_right_boundary = float(max(Rs))
 
         overlapping_peaks = sorted([p for p in included if p != int(peak_idx)])
@@ -591,7 +594,6 @@ class GDGTAnalyzer:
                   overlaps=[int(v) for v in overlapping_peaks])
 
         return neighborhood_left_boundary, neighborhood_right_boundary, overlapping_peaks
-
 
     def calculate_boundaries(self, x, y, ind_peak, tolerance=0.02, w_factor=3.0):
         """
@@ -643,14 +645,14 @@ class GDGTAnalyzer:
         else:
             left_shoulder = p
         if R0 > p + 1:
-            right_shoulder = (p + 1) + int(np.argmax(abs_vel[p+1:R0+1]))
+            right_shoulder = (p + 1) + int(np.argmax(abs_vel[p + 1:R0 + 1]))
         else:
             right_shoulder = p
 
         # thresholds from shoulder strength (avoid zero by epsilon)
         eps = 1e-12
         # print(vel_s)
-        left_thr  = max(tolerance * abs(vel_s[left_shoulder]), eps)
+        left_thr = max(tolerance * abs(vel_s[left_shoulder]), eps)
         right_thr = max(tolerance * abs(vel_s[right_shoulder]), eps)
 
         # --- walk into tails, but stay inside the local window ---
@@ -712,21 +714,23 @@ class GDGTAnalyzer:
         # Normalize the derivative for stability in thresholding
         derivative /= np.max(np.abs(derivative))
         # Search for the last point where derivative is greater than threshold before the peak
-        left_candidates = np.where((np.abs(derivative[:new_ind_peak]) < threshold))[0]  # | (derivative[:new_ind_peak] < -threshold))[0]
+        left_candidates = np.where((np.abs(derivative[:new_ind_peak]) < threshold))[
+            0]  # | (derivative[:new_ind_peak] < -threshold))[0]
         if left_candidates.size > 0:
             left_boundary_index = left_candidates[-1]
         else:
             left_boundary_index = 0  # Start of the array if no suitable point is found
 
         # Search for the first point where derivative is greater than threshold after the peak
-        right_candidates = np.where((derivative[new_ind_peak:] < threshold))[0]  # np.where((derivative[new_ind_peak:] > threshold) | (derivative[new_ind_peak:] < -threshold))[0]
+        right_candidates = np.where((derivative[new_ind_peak:] < threshold))[
+            0]  # np.where((derivative[new_ind_peak:] > threshold) | (derivative[new_ind_peak:] < -threshold))[0]
         if right_candidates.size > 0:
             right_boundary_index = right_candidates[0] + new_ind_peak
         else:
             right_boundary_index = len(x) - 1  # End of the array if no suitable point is found
         return int(left_boundary_index), int(right_boundary_index)
 
-    def smoother(self, y, param_0 = None, param_1 = None):
+    def smoother(self, y, param_0=None, param_1=None):
         """
         Applies a Savitzky-Golay filter to smooth the given data.
 
@@ -785,7 +789,8 @@ class GDGTAnalyzer:
         x_n = x[:-1]
         return fd, x_n
 
-    def extrapolate_gaussian(self, x, amp, cen, wid, decay, x_min, x_max, step=0.001): # Modified step from 0.01 17092025
+    def extrapolate_gaussian(self, x, amp, cen, wid, decay, x_min, x_max,
+                             step=0.001):  # Modified step from 0.01 17092025
         """
         Extends the Gaussian function by extrapolating its tails between x_min and x_max with a specified step size.
 
@@ -865,169 +870,172 @@ class GDGTAnalyzer:
         return x_min, x_max
 
     def _sigma_from_curvature(self, xv, yv, i_local, eps=1e-12):
-         """Estimate local sigma from smoothed 2nd derivative at a local apex index i_local."""
-         import numpy as np
+        """Estimate local sigma from smoothed 2nd derivative at a local apex index i_local."""
+        import numpy as np
 
-         # >>> Make sure we index positionally, not by pandas labels
-         xv = np.asarray(xv)
-         yv = np.asarray(yv)
+        # >>> Make sure we index positionally, not by pandas labels
+        xv = np.asarray(xv)
+        yv = np.asarray(yv)
 
-         if i_local < 1 or i_local > len(xv) - 2:
-             return None
+        if i_local < 1 or i_local > len(xv) - 2:
+            return None
 
-         # Smooth y (your smoother can accept arrays)
-         ys = self.smoother(yv)
+        # Smooth y (your smoother can accept arrays)
+        ys = self.smoother(yv)
 
-         dx1 = xv[i_local]   - xv[i_local - 1]
-         dx2 = xv[i_local+1] - xv[i_local]
-         ypp = 2.0 * ((ys[i_local + 1] - ys[i_local]) / (dx2 + eps)
-                      - (ys[i_local] - ys[i_local - 1]) / (dx1 + eps)) / (dx1 + dx2 + eps)
+        dx1 = xv[i_local] - xv[i_local - 1]
+        dx2 = xv[i_local + 1] - xv[i_local]
+        ypp = 2.0 * ((ys[i_local + 1] - ys[i_local]) / (dx2 + eps)
+                     - (ys[i_local] - ys[i_local - 1]) / (dx1 + eps)) / (dx1 + dx2 + eps)
 
-         A = max(ys[i_local], eps)
-         if not np.isfinite(ypp) or ypp >= -eps:
-             return None
-         return float(np.sqrt(A / (-ypp + eps)))
+        A = max(ys[i_local], eps)
+        if not np.isfinite(ypp) or ypp >= -eps:
+            return None
+        return float(np.sqrt(A / (-ypp + eps)))
+
     def _width_seed_and_bounds(self, x_seg, y_seg, c0, cL, cR, w_min_abs, w_max_abs, gap_gamma=0.6):
-         """Seed width from curvature and cap by nearest gap in *segment* x-units."""
-         import numpy as np
-         # >>> Ensure positional math
-         x_arr = np.asarray(x_seg)
-         y_arr = np.asarray(y_seg)
+        """Seed width from curvature and cap by nearest gap in *segment* x-units."""
+        import numpy as np
+        # >>> Ensure positional math
+        x_arr = np.asarray(x_seg)
+        y_arr = np.asarray(y_seg)
 
-         # positional index of c0 in the segment
-         i_loc = int(np.argmin(np.abs(x_arr - c0)))
+        # positional index of c0 in the segment
+        i_loc = int(np.argmin(np.abs(x_arr - c0)))
 
-         s_curv = self._sigma_from_curvature(x_arr, y_arr, i_loc)
+        s_curv = self._sigma_from_curvature(x_arr, y_arr, i_loc)
 
-         gapL = abs(c0 - cL) if cL is not None else np.inf
-         gapR = abs(c0 - cR) if cR is not None else np.inf
-         nearest_gap = np.nanmin([gapL, gapR])
-         cap = gap_gamma * nearest_gap if np.isfinite(nearest_gap) else np.inf
+        gapL = abs(c0 - cL) if cL is not None else np.inf
+        gapR = abs(c0 - cR) if cR is not None else np.inf
+        nearest_gap = np.nanmin([gapL, gapR])
+        cap = gap_gamma * nearest_gap if np.isfinite(nearest_gap) else np.inf
 
-         hi = np.nanmin([cap, w_max_abs]) if np.isfinite(cap) else w_max_abs
-         w0 = hi if (s_curv is None or not np.isfinite(s_curv)) else min(s_curv, hi)
-         w0 = float(np.clip(w0, w_min_abs, hi))
-         return w0, float(w_min_abs), float(hi)
+        hi = np.nanmin([cap, w_max_abs]) if np.isfinite(cap) else w_max_abs
+        w0 = hi if (s_curv is None or not np.isfinite(s_curv)) else min(s_curv, hi)
+        w0 = float(np.clip(w0, w_min_abs, hi))
+        return w0, float(w_min_abs), float(hi)
 
     def fit_gaussians(self, x_full, y_full, ind_peak, trace, peaks, ax, valleys):
-       """
-       Fits single or multi-Gaussian models to the provided data to determine the best-fit parameters
-       for the peak of interest. (Structure preserved; multi-Gaussian seeding/bounds improved.)
-       """
+        """
+        Fits single or multi-Gaussian models to the provided data to determine the best-fit parameters
+        for the peak of interest. (Structure preserved; multi-Gaussian seeding/bounds improved.)
+        """
 
-       # curvature-based sigma + gap cap
+        # curvature-based sigma + gap cap
 
+        # detect overlapping peaks
+        current_peaks = np.array(peaks)
+        current_peaks = np.append(current_peaks, ind_peak)
+        current_peaks = np.sort(current_peaks)
 
-       # detect overlapping peaks
-       current_peaks = np.array(peaks)
-       current_peaks = np.append(current_peaks, ind_peak)
-       current_peaks = np.sort(current_peaks)
+        iteration = 0
+        best_fit_y = None
+        best_x = None
+        best_fit_params = None
+        best_fit_params_error = None
+        best_idx_interest = None
+        best_error = np.inf
+        multi_gauss_flag = True  # assume multi until single wins
 
-       iteration = 0
-       best_fit_y = None
-       best_x = None
-       best_fit_params = None
-       best_fit_params_error = None
-       best_idx_interest = None
-       best_error = np.inf
-       multi_gauss_flag = True  # assume multi until single wins
+        dx_med_full = np.median(np.diff(x_full)) if x_full.size > 1 else 1.0
+        if not np.isfinite(dx_med_full) or dx_med_full <= 0:
+            dx_med_full = 1.0
 
-       dx_med_full = np.median(np.diff(x_full)) if x_full.size > 1 else 1.0
-       if not np.isfinite(dx_med_full) or dx_med_full <= 0:
-           dx_med_full = 1.0
+        # iterate: fit multi-gaussian, drop farthest peak each time
+        while len(current_peaks) > 1:
+            left_boundary, _ = self.calculate_boundaries(x_full, y_full, np.min(current_peaks))
+            _, right_boundary = self.calculate_boundaries(x_full, y_full, np.max(current_peaks))
+            x = x_full[left_boundary: right_boundary + 1]
+            y = y_full[left_boundary: right_boundary + 1]
 
-       # iterate: fit multi-gaussian, drop farthest peak each time
-       while len(current_peaks) > 1:
-           left_boundary, _ = self.calculate_boundaries(x_full, y_full, np.min(current_peaks))
-           _, right_boundary = self.calculate_boundaries(x_full, y_full, np.max(current_peaks))
-           x = x_full[left_boundary : right_boundary + 1]
-           y = y_full[left_boundary : right_boundary + 1]
+            # sort by x within the segment
+            sort_idx = np.argsort(x_full[current_peaks])
+            current_peaks = current_peaks[sort_idx]
 
-           # sort by x within the segment
-           sort_idx = np.argsort(x_full[current_peaks])
-           current_peaks = current_peaks[sort_idx]
+            # local indices & neighbor coords (for gap-aware caps)
+            x_centers_seed = x_full[current_peaks].to_numpy()
+            neighbors_L = [x_centers_seed[k - 1] if k - 1 >= 0 else None for k in range(len(current_peaks))]
+            neighbors_R = [x_centers_seed[k + 1] if k + 1 < len(current_peaks) else None for k in
+                           range(len(current_peaks))]
 
-           # local indices & neighbor coords (for gap-aware caps)
-           x_centers_seed = x_full[current_peaks].to_numpy()
-           neighbors_L = [x_centers_seed[k-1] if k-1 >= 0 else None for k in range(len(current_peaks))]
-           neighbors_R = [x_centers_seed[k+1] if k+1 < len(current_peaks) else None for k in range(len(current_peaks))]
+            # segment-based width floors/ceilings
+            dx_med_seg = np.median(np.diff(x)) if x.size > 1 else dx_med_full
+            if not np.isfinite(dx_med_seg) or dx_med_seg <= 0:
+                dx_med_seg = dx_med_full
+            w_min_abs = max(1.5 * dx_med_seg, 1e-3)  # floor like your old logic but safer
+            w_max_abs = max((x.max() - x.min()) / 3.0, 2 * w_min_abs)
 
-           # segment-based width floors/ceilings
-           dx_med_seg = np.median(np.diff(x)) if x.size > 1 else dx_med_full
-           if not np.isfinite(dx_med_seg) or dx_med_seg <= 0:
-               dx_med_seg = dx_med_full
-           w_min_abs = max(1.5 * dx_med_seg, 1e-3)                 # floor like your old logic but safer
-           w_max_abs = max((x.max() - x.min()) / 3.0, 2 * w_min_abs)
+            index_of_interest = np.where(current_peaks == ind_peak)[0][0]
 
-           index_of_interest = np.where(current_peaks == ind_peak)[0][0]
+            initial_guesses = []
+            bounds_lower = []
+            bounds_upper = []
 
-           initial_guesses = []
-           bounds_lower = []
-           bounds_upper = []
+            # Build bounds for fitting
+            for k, peak in enumerate(current_peaks):
+                # your original seeding (height, center) via helper
+                h0, c0, w_est = self.estimate_initial_gaussian_params(x, y, peak)
+                h0 = float(h0[0]);
+                c0 = float(c0[0]);
+                w_est = float(w_est[0])
 
-           # Build bounds for fitting
-           for k, peak in enumerate(current_peaks):
-               # your original seeding (height, center) via helper
-               h0, c0, w_est = self.estimate_initial_gaussian_params(x, y, peak)
-               h0 = float(h0[0]); c0 = float(c0[0]); w_est = float(w_est[0])
+                # curvature+gap width (for sandwiched peaks); edges still allowed to be broader
+                w0, w_lo, w_hi = self._width_seed_and_bounds(
+                    x_seg=x, y_seg=y, c0=c0,
+                    cL=neighbors_L[k], cR=neighbors_R[k],
+                    w_min_abs=w_min_abs, w_max_abs=w_max_abs,
+                    gap_gamma=0.6)
 
-               # curvature+gap width (for sandwiched peaks); edges still allowed to be broader
-               w0, w_lo, w_hi = self._width_seed_and_bounds(
-                   x_seg=x, y_seg=y, c0=c0,
-                   cL=neighbors_L[k], cR=neighbors_R[k],
-                   w_min_abs=w_min_abs, w_max_abs=w_max_abs,
-                   gap_gamma=0.6)
+                # amplitudes
+                a_lo = 0.0
+                a_hi = max(1.0 + y_full[peak], h0 * 3.0)
 
-               # amplitudes
-               a_lo = 0.0
-               a_hi = max(1.0 + y_full[peak], h0 * 3.0)
+                # center bounds
+                c_lo = c0 - 0.15
+                c_hi = c0 + 0.15
 
-               # center bounds
-               c_lo = c0 - 0.15
-               c_hi = c0 + 0.15
+                initial_guesses.extend([h0, c0, w0])
+                bounds_lower.extend([a_lo, c_lo, w_lo])
+                bounds_upper.extend([a_hi, c_hi, w_hi])
 
-               initial_guesses.extend([h0, c0, w0])
-               bounds_lower.extend([a_lo, c_lo, w_lo])
-               bounds_upper.extend([a_hi, c_hi, w_hi])
+            bounds = (bounds_lower, bounds_upper)
 
-           bounds = (bounds_lower, bounds_upper)
+            try:
+                popt, pcov = curve_fit(self.multigaussian, x, y, p0=initial_guesses, method="trf", bounds=bounds,
+                                       maxfev=self.gi)
+                fitted_y = self.multigaussian(x, *popt)
+                # robustly find which fitted component corresponds to the clicked apex
+                fitted_centers = np.array(popt[1::3], float)
+                index_of_interest_fit = int(np.argmin(np.abs(fitted_centers - x_full[ind_peak])))
 
-           try:
-               popt, pcov = curve_fit(self.multigaussian, x, y, p0=initial_guesses,method="trf", bounds=bounds, maxfev=self.gi)
-               fitted_y = self.multigaussian(x, *popt)
-               # robustly find which fitted component corresponds to the clicked apex
-               fitted_centers = np.array(popt[1::3], float)
-               index_of_interest_fit = int(np.argmin(np.abs(fitted_centers - x_full[ind_peak])))
+                error = float(np.sqrt(((fitted_y - y) ** 2).mean()))  # RMSE
+                # print(f"multi error: {error}")
+                if error < best_error:
+                    best_error = error
+                    best_fit_params = popt
+                    best_fit_params_error = pcov
+                    best_fit_y = fitted_y
+                    best_x = x
+                    best_idx_interest = index_of_interest_fit
+            except RuntimeError:
+                pass
 
-               error = float(np.sqrt(((fitted_y - y) ** 2).mean()))  # RMSE
-               # print(f"multi error: {error}")
-               if error < best_error:
+            # remove the farthest peak from the clicked apex (preserve your strategy)
+            distances = np.abs(x[current_peaks] - x_full[ind_peak])
+            if distances.size > 0:
+                max_dist_idx = int(np.argmax(distances))
+                current_peaks = np.delete(current_peaks, max_dist_idx)
+            iteration += 1
 
-                   best_error = error
-                   best_fit_params = popt
-                   best_fit_params_error = pcov
-                   best_fit_y = fitted_y
-                   best_x = x
-                   best_idx_interest = index_of_interest_fit
-           except RuntimeError:
-               pass
-
-           # remove the farthest peak from the clicked apex (preserve your strategy)
-           distances = np.abs(x[current_peaks] - x_full[ind_peak])
-           if distances.size > 0:
-               max_dist_idx = int(np.argmax(distances))
-               current_peaks = np.delete(current_peaks, max_dist_idx)
-           iteration += 1
-
-       if len(current_peaks) == 1:
-            apex_x   = float(x_full[ind_peak])
+        if len(current_peaks) == 1:
+            apex_x = float(x_full[ind_peak])
             full_peaks = np.asarray(self.peaks[trace])
 
             # 1) Original derivative-based boundaries
             left_b1, right_b1 = self.calculate_boundaries(x_full, y_full, ind_peak)
             L_idx, R_idx = int(left_b1), int(right_b1)
 
-            v2v = self.find_valleys(y_full, full_peaks, peak_oi = ind_peak)
+            v2v = self.find_valleys(y_full, full_peaks, peak_oi=ind_peak)
             vL_idx = None
             vR_idx = None
 
@@ -1048,7 +1056,8 @@ class GDGTAnalyzer:
                     return idx_b
                 if idx_b is None:
                     return idx_a
-                xa = float(x_full[idx_a]); xb = float(x_full[idx_b])
+                xa = float(x_full[idx_a]);
+                xb = float(x_full[idx_b])
                 return idx_a if abs(xa - apex_x_val) <= abs(xb - apex_x_val) else idx_b
 
             # left side (must be strictly < apex)
@@ -1066,15 +1075,16 @@ class GDGTAnalyzer:
                 L_idx, R_idx = int(left_b1), int(right_b1)
 
             # ---------------- window chosen; proceed to fit ----------------
-            x = x_full[L_idx : R_idx + 1]
-            y = y_full[L_idx : R_idx + 1]
+            x = x_full[L_idx: R_idx + 1]
+            y = y_full[L_idx: R_idx + 1]
 
             x_vals = np.asarray(x)  # works for Series or ndarray
             i_loc = int(np.argmin(np.abs(x_vals - apex_x)))
             peak_key = x.index[i_loc] if hasattr(x, "index") else i_loc
             # estimator needs Series (uses .iloc), so pass x,y as-is here
             height, center, width = self.estimate_initial_gaussian_params(x, y, peak_key)
-            amp0 = float(height[0]); wid0 = float(width[0])
+            amp0 = float(height[0]);
+            wid0 = float(width[0])
 
             # NOW convert to NumPy for curve_fit and downstream numeric ops
             if hasattr(x, "to_numpy"): x = x.to_numpy()
@@ -1089,8 +1099,8 @@ class GDGTAnalyzer:
             a_hi = max(1.0 + float(y_full[ind_peak]), amp0 * 3.0)
             c_pad = 1e-2
             p0 = [amp0, apex_x, wid0]
-            lb = [0.0,        apex_x - c_pad, w_min_abs]
-            ub = [a_hi,       apex_x + c_pad, w_max_abs]
+            lb = [0.0, apex_x - c_pad, w_min_abs]
+            ub = [a_hi, apex_x + c_pad, w_max_abs]
 
             try:
                 single_popt, single_pcov = curve_fit(
@@ -1112,62 +1122,62 @@ class GDGTAnalyzer:
             except RuntimeError:
                 pass
 
-       # post-processing: extend -> boundaries -> slice -> area
-       if multi_gauss_flag is True:
-           # print(f"Selected multi: {trace}")
-           model_type = "Multi-Gaussian"
-           j   = int(best_idx_interest)           # component of interest
-           amp = best_fit_params[3*j + 0]
-           cen = best_fit_params[3*j + 1]
-           wid = best_fit_params[3*j + 2]
+        # post-processing: extend -> boundaries -> slice -> area
+        if multi_gauss_flag is True:
+            # print(f"Selected multi: {trace}")
+            model_type = "Multi-Gaussian"
+            j = int(best_idx_interest)  # component of interest
+            amp = best_fit_params[3 * j + 0]
+            cen = best_fit_params[3 * j + 1]
+            wid = best_fit_params[3 * j + 2]
 
-           if best_fit_params_error is not None:
-               cov_sel = best_fit_params_error[3*j:3*j+3, 3*j:3*j+3]
-               errs    = np.sqrt(np.maximum(np.diag(cov_sel), 0.0))
-               amp_unc, cen_unc, wid_unc = float(errs[0]), float(errs[1]), float(errs[2])
-           else:
-               amp_unc = cen_unc = wid_unc = None
+            if best_fit_params_error is not None:
+                cov_sel = best_fit_params_error[3 * j:3 * j + 3, 3 * j:3 * j + 3]
+                errs = np.sqrt(np.maximum(np.diag(cov_sel), 0.0))
+                amp_unc, cen_unc, wid_unc = float(errs[0]), float(errs[1]), float(errs[2])
+            else:
+                amp_unc = cen_unc = wid_unc = None
 
-           # principled extension (decay=None for symmetric)
-           x_min, x_max = self.calculate_gaus_extension_limits(cen, wid, decay=None)
-           best_x, best_fit_y = self.extrapolate_gaussian(best_x, amp, cen, wid, None, x_min, x_max)
-           new_ind_peak = int(np.abs(best_x - x_full[ind_peak]).argmin())
-           left_boundary, right_boundary = self.calculate_boundaries(best_x, best_fit_y, new_ind_peak)
-           best_x = best_x[left_boundary - 1 : right_boundary + 1]
-           best_fit_y = best_fit_y[left_boundary - 1 : right_boundary + 1]
-           area_smooth = self.peak_area_distribution(
-               best_fit_params, best_fit_params_error, best_idx_interest,
-               best_x, x_full, ax, ind_peak, best_fit_y, step = 0.001, min_pts = 21)
+            # principled extension (decay=None for symmetric)
+            x_min, x_max = self.calculate_gaus_extension_limits(cen, wid, decay=None)
+            best_x, best_fit_y = self.extrapolate_gaussian(best_x, amp, cen, wid, None, x_min, x_max)
+            new_ind_peak = int(np.abs(best_x - x_full[ind_peak]).argmin())
+            left_boundary, right_boundary = self.calculate_boundaries(best_x, best_fit_y, new_ind_peak)
+            best_x = best_x[left_boundary - 1: right_boundary + 1]
+            best_fit_y = best_fit_y[left_boundary - 1: right_boundary + 1]
+            area_smooth = self.peak_area_distribution(
+                best_fit_params, best_fit_params_error, best_idx_interest,
+                best_x, x_full, ax, ind_peak, best_fit_y, step=0.001, min_pts=21)
 
-       else:
-           # print(f"Selected single: {trace}")
-           alpha = None
-           if len(best_fit_params) >= 4:
-               model_type = "Asymmetric-Gaussian"
-               amp, cen, wid, alpha = best_fit_params[0], best_fit_params[1], best_fit_params[2], best_fit_params[3]
-           else:
-               model_type = "Single-Gaussian"
-               amp, cen, wid = best_fit_params[0], best_fit_params[1], best_fit_params[2]
-           if best_fit_params_error is not None:
-               errs = np.sqrt(np.maximum(np.diag(best_fit_params_error), 0.0))
-               amp_unc, cen_unc, wid_unc = float(errs[0]), float(errs[1]), float(errs[2])
-           else:
-               amp_unc = cen_unc = wid_unc = None
-           x_min, x_max = self.calculate_gaus_extension_limits(cen, wid, decay=None, factor=2)
-           if alpha is None:
-               best_x, best_fit_y = self.extrapolate_gaussian(best_x, amp, cen, wid, None, x_min, x_max)
-           else:
-               best_x = np.arange(x_min, x_max, 0.001)
-               best_fit_y = self.skewed_gaussian(best_x, amp, cen, wid, alpha)
-           new_ind_peak = int(np.abs(best_x - x_full[ind_peak]).argmin())
-           left_boundary, right_boundary = self.calculate_boundaries(best_x, best_fit_y, new_ind_peak)
-           best_x = best_x[left_boundary - 1 : right_boundary + 1]
-           best_fit_y = best_fit_y[left_boundary - 1 : right_boundary + 1]
-           area_smooth = self.peak_area_distribution(
-               best_fit_params, best_fit_params_error, best_idx_interest,
-               best_x, x_full, ax, ind_peak, best_fit_y, step = 0.001, min_pts = 21)
+        else:
+            # print(f"Selected single: {trace}")
+            alpha = None
+            if len(best_fit_params) >= 4:
+                model_type = "Asymmetric-Gaussian"
+                amp, cen, wid, alpha = best_fit_params[0], best_fit_params[1], best_fit_params[2], best_fit_params[3]
+            else:
+                model_type = "Single-Gaussian"
+                amp, cen, wid = best_fit_params[0], best_fit_params[1], best_fit_params[2]
+            if best_fit_params_error is not None:
+                errs = np.sqrt(np.maximum(np.diag(best_fit_params_error), 0.0))
+                amp_unc, cen_unc, wid_unc = float(errs[0]), float(errs[1]), float(errs[2])
+            else:
+                amp_unc = cen_unc = wid_unc = None
+            x_min, x_max = self.calculate_gaus_extension_limits(cen, wid, decay=None, factor=2)
+            if alpha is None:
+                best_x, best_fit_y = self.extrapolate_gaussian(best_x, amp, cen, wid, None, x_min, x_max)
+            else:
+                best_x = np.arange(x_min, x_max, 0.001)
+                best_fit_y = self.skewed_gaussian(best_x, amp, cen, wid, alpha)
+            new_ind_peak = int(np.abs(best_x - x_full[ind_peak]).argmin())
+            left_boundary, right_boundary = self.calculate_boundaries(best_x, best_fit_y, new_ind_peak)
+            best_x = best_x[left_boundary - 1: right_boundary + 1]
+            best_fit_y = best_fit_y[left_boundary - 1: right_boundary + 1]
+            area_smooth = self.peak_area_distribution(
+                best_fit_params, best_fit_params_error, best_idx_interest,
+                best_x, x_full, ax, ind_peak, best_fit_y, step=0.001, min_pts=21)
 
-       return best_x, best_fit_y, area_smooth, [amp,cen,wid], [amp_unc, cen_unc,wid_unc], model_type
+        return best_x, best_fit_y, area_smooth, [amp, cen, wid], [amp_unc, cen_unc, wid_unc], model_type
 
     def _fit_asymmetric_gaussian(self, x_full, y_full, ind_peak, current_best_error):
         x_arr = np.asarray(x_full, dtype=float)
@@ -1211,9 +1221,8 @@ class GDGTAnalyzer:
             pass
         return None
 
-
-    def peak_area_distribution(self,best_fit_params,best_fit_params_error, best_idx_interest,
-        best_x,x_full,ax,ind_peak,best_fit_y, *,step,min_pts):
+    def peak_area_distribution(self, best_fit_params, best_fit_params_error, best_idx_interest,
+                               best_x, x_full, ax, ind_peak, best_fit_y, *, step, min_pts):
         """
         Compute area for the *already-selected & already-sliced* peak window.
         No boundary finding here. No 'multi' branching. Just integrate.
@@ -1276,7 +1285,6 @@ class GDGTAnalyzer:
         area_smooth = float(simpson(y, best_x)) if best_x.size >= 2 else 0.0
         return area_smooth
 
-
     def _mvnorm_to_logspace(self, mean, cov, log_idx):
         """
         First-order transform (delta method) to log-parameter space.
@@ -1286,14 +1294,14 @@ class GDGTAnalyzer:
         Returns (mean_log, cov_log) stabilized.
         """
         mean = np.asarray(mean, float).copy()
-        cov  = np.asarray(cov,  float).copy()
+        cov = np.asarray(cov, float).copy()
 
         # Clean covariance (symmetrize, NaNs->0)
         cov = np.nan_to_num(0.5 * (cov + cov.T), nan=0.0, posinf=0.0, neginf=0.0)
 
         # Ensure strictly positive means for log dims; avoid huge 1/mean
         eps_pos = 1e-6
-        min_for_jac = 1e-3   # cap 1/mean at <= 1/1e-3 = 1e3
+        min_for_jac = 1e-3  # cap 1/mean at <= 1/1e-3 = 1e3
         for j in log_idx:
             if not np.isfinite(mean[j]) or mean[j] <= eps_pos:
                 # If mean is tiny or non-finite, push to small positive
@@ -1302,7 +1310,7 @@ class GDGTAnalyzer:
         # Build Jacobian
         J = np.eye(mean.size, dtype=float)
         for j in log_idx:
-            denom = max(min_for_jac, mean[j])   # prevents exploding 1/mean
+            denom = max(min_for_jac, mean[j])  # prevents exploding 1/mean
             J[j, j] = 1.0 / denom
 
         # Map to log-covariance
@@ -1335,8 +1343,8 @@ class GDGTAnalyzer:
             span = max(1e-6, x_max - x_min)
             # resolution proxy
             dx_med = max(1e-6, float(np.median(np.diff(np.linspace(x_min, x_max, 100)))))
-            wid_min = max(3 * dx_med, 1e-4 * span)     # not below 3 samples or 0.01% of span
-            wid_max = 0.5 * span                       # not wider than half the window
+            wid_min = max(3 * dx_med, 1e-4 * span)  # not below 3 samples or 0.01% of span
+            wid_max = 0.5 * span  # not wider than half the window
         else:
             wid_min, wid_max = 1e-4, 1.0
 
@@ -1345,7 +1353,7 @@ class GDGTAnalyzer:
 
         # Build per-dimension bounds in ORIGINAL space
         bounds_lo = np.full(mean.shape, -np.inf)
-        bounds_hi = np.full(mean.shape,  np.inf)
+        bounds_hi = np.full(mean.shape, np.inf)
         for j in log_idx:
             # if this index corresponds to width (by your API, wid is index 2)
             if j == 2:
@@ -1356,7 +1364,7 @@ class GDGTAnalyzer:
 
         # Convert bounds to LOG space for clipping
         log_lo = np.where(np.isfinite(bounds_lo), np.log(np.maximum(bounds_lo, 1e-12)), -np.inf)
-        log_hi = np.where(np.isfinite(bounds_hi), np.log(np.maximum(bounds_hi, 1e-12)),  np.inf)
+        log_hi = np.where(np.isfinite(bounds_hi), np.log(np.maximum(bounds_hi, 1e-12)), np.inf)
 
         # --- Draws in log space, with robust fallbacks ---
         try:
@@ -1370,7 +1378,7 @@ class GDGTAnalyzer:
         # Clip to bounds in log space to prevent overflow / unphysical values
         for j in log_idx:
             lo = log_lo[j] if np.isfinite(log_lo[j]) else -np.inf
-            hi = log_hi[j] if np.isfinite(log_hi[j]) else  np.inf
+            hi = log_hi[j] if np.isfinite(log_hi[j]) else np.inf
             s_log[:, j] = np.clip(s_log[:, j], lo, hi)
 
         # Map back
@@ -1395,8 +1403,8 @@ class GDGTAnalyzer:
 
         left_boundary = max(int(left_boundary), 0)
         right_boundary = min(int(right_boundary), len(xdata) - 1)
-        xs = np.asarray(xdata[left_boundary : right_boundary + 1], dtype=float)
-        ys = np.asarray(y_bcorr[left_boundary : right_boundary + 1], dtype=float)
+        xs = np.asarray(xdata[left_boundary: right_boundary + 1], dtype=float)
+        ys = np.asarray(y_bcorr[left_boundary: right_boundary + 1], dtype=float)
         ys = np.nan_to_num(ys, nan=0.0)
         if self.clip_negative_amplitudes:
             ys = np.clip(ys, 0.0, None)
@@ -1417,9 +1425,11 @@ class GDGTAnalyzer:
                     left_fit = max(int(left_fit) - 1, 0)
                     right_fit = min(int(right_fit) + 1, len(fit_x) - 1)
                     if right_fit > left_fit:
-                        fit_x = fit_x[left_fit : right_fit + 1]
-                        fit_y = fit_y[left_fit : right_fit + 1]
-                area = float(simpson(np.maximum(np.asarray(fit_y, dtype=float), 0.0), np.asarray(fit_x, dtype=float))) if len(fit_x) >= 2 else 0.0
+                        fit_x = fit_x[left_fit: right_fit + 1]
+                        fit_y = fit_y[left_fit: right_fit + 1]
+                area = float(
+                    simpson(np.maximum(np.asarray(fit_y, dtype=float), 0.0), np.asarray(fit_x, dtype=float))) if len(
+                    fit_x) >= 2 else 0.0
                 if fit_pcov is not None:
                     errs = np.sqrt(np.maximum(np.diag(fit_pcov), 0.0))
                     model_unc = [float(errs[0]), float(errs[1]), float(errs[2])]
@@ -1471,13 +1481,21 @@ class GDGTAnalyzer:
         """
         try:
             valleys = self.find_valleys(y_bcorr, peaks)
-            A, B, peak_neighborhood = self.find_peak_neighborhood_boundaries(xdata, y_bcorr, self.peaks[trace], valleys, peak_idx, ax, self.max_peaks_for_neighborhood, trace)
+            A, B, peak_neighborhood = self.find_peak_neighborhood_boundaries(xdata, y_bcorr, self.peaks[trace], valleys,
+                                                                             peak_idx, ax,
+                                                                             self.max_peaks_for_neighborhood, trace)
             if self.schema_type == "single_channel" and not self.enable_peak_deconvolution:
                 x_fit, y_fit_smooth, area_smooth, model_params, model_params_unc, model_type = self.integrate_peak_direct(
                     xdata, y_bcorr, peak_idx, trace
                 )
             else:
-                x_fit, y_fit_smooth, area_smooth, model_params, model_params_unc, model_type = self.fit_gaussians(xdata, y_bcorr, peak_idx, trace, peak_neighborhood, ax, valleys)
+                x_fit, y_fit_smooth, area_smooth, model_params, model_params_unc, model_type = self.fit_gaussians(xdata,
+                                                                                                                  y_bcorr,
+                                                                                                                  peak_idx,
+                                                                                                                  trace,
+                                                                                                                  peak_neighborhood,
+                                                                                                                  ax,
+                                                                                                                  valleys)
             rt_of_peak = xdata[peak_idx]
             # Test for peak amplitude
             amp = None
@@ -1493,7 +1511,7 @@ class GDGTAnalyzer:
                 return
             fill = ax.fill_between(x_fit, 0, y_fit_smooth, color="grey", alpha=0.5)
             rt_of_peak = xdata[peak_idx]
-            area_text = f"Area: {area_smooth:.0f}\nRT: {rt_of_peak:.0f}"
+            area_text = f"Area: {area_smooth:.0f}\nRT: {rt_of_peak:.2f}"
             text_annotation = ax.annotate(
                 area_text,
                 xy=(rt_of_peak + 0.2, self._annotation_y(ax, level=0.55)),
@@ -1517,28 +1535,28 @@ class GDGTAnalyzer:
                 "params": (
                     None if model_params is None else
                     {"Amplitude": float(model_params[0]),
-                     "Center":    float(model_params[1]),
-                     "Width":     float(model_params[2])}),
+                     "Center": float(model_params[1]),
+                     "Width": float(model_params[2])}),
                 "params_unc": (
                     None if model_params_unc is None else
                     {"Amplitude Unc": float(model_params_unc[0]),
-                     "Center Unc":    float(model_params_unc[1]),
-                     "Width Unc":     float(model_params_unc[2])}),
+                     "Center Unc": float(model_params_unc[1]),
+                     "Width Unc": float(model_params_unc[2])}),
 
                 # evaluated fit curve (same as what you stash in peak_results)
                 "fit": {
                     "x": np.asarray(x_fit, dtype=float),
-                    "y": np.asarray(y_fit_smooth, dtype=float),},
+                    "y": np.asarray(y_fit_smooth, dtype=float), },
                 "x_grid": (
                     (lambda xarr: (
                         {"encoding": "uniform",
                          "xmin": float(xarr[0]),
                          "xmax": float(xarr[-1]),
-                         "dx":   float(np.diff(xarr).mean()),
-                         "n":    int(xarr.size)}
+                         "dx": float(np.diff(xarr).mean()),
+                         "n": int(xarr.size)}
                         if (xarr.size >= 2 and np.allclose(np.diff(xarr), np.diff(xarr)[0], rtol=1e-6, atol=1e-12))
                         else {"encoding": "explicit", "n": int(xarr.size)}
-                    ))(np.asarray(x_fit, dtype=float))),}
+                    ))(np.asarray(x_fit, dtype=float))), }
             plt.draw()
             if trace not in self.peak_results:
                 self.peak_results[trace] = {
@@ -1549,14 +1567,14 @@ class GDGTAnalyzer:
                     # Model parameters and their 1σ uncertainties
                     "Model Parameters": {
                         "Amplitude": [],
-                        "Center":    [],
-                        "Width":     [],
+                        "Center": [],
+                        "Width": [],
                         "Amplitude Unc": [],
-                        "Center Unc":    [],
+                        "Center Unc": [],
                         "Width Unc": []},
                     "Fit": {
                         "x": [],
-                        "y": [],},}
+                        "y": [], }, }
             self.peak_results[trace]["Retention Time"].append(rt_of_peak)
             self.peak_results[trace]["Area"].append(area_smooth)
             self.peak_results[trace]["Model Type"].append(model_type)
@@ -1646,7 +1664,7 @@ class GDGTAnalyzer:
 
         # Keep references on self so they don't get garbage-collected
         self.text_box_min = TextBox(axbox_min, 'Window start: ', initial=str(self.window_bounds[0]))
-        self.text_box_max = TextBox(axbox_max, 'Window end: ',  initial=str(self.window_bounds[1]))
+        self.text_box_max = TextBox(axbox_max, 'Window end: ', initial=str(self.window_bounds[1]))
 
         def submit_callback(text):
             try:
@@ -1704,12 +1722,11 @@ class GDGTAnalyzer:
         # Baseline correction and smoothing on the full dataset
         y_base, min_peak_amp = self.baseline(x_values, y)
         min_peak_amp = self.min_peak_amp if self.min_peak_amp is not None else min_peak_amp
-        self.baseline_threshold=min_peak_amp
+        self.baseline_threshold = min_peak_amp
         y_bcorr = y - y_base
         if self.clip_negative_amplitudes:
             y_bcorr[y_bcorr < 0] = 0
         y_filtered = self.smoother(y_bcorr)
-
 
         # Store the full processed data for later updates
         if not hasattr(self, "full_data"):
@@ -1742,17 +1759,18 @@ class GDGTAnalyzer:
         # Store additional info for peak selection, etc.
         self.axs_to_traces[ax] = trace
         self.datasets[trace_idx] = (x_values, y_bcorr)
-        if self.max_peak_amp is not None: # Scenarios for identifying peaks with some amplitude ceiling
-            peaks_total, properties = find_peaks(y_filtered, height=(min_peak_amp, self.max_peak_amp), prominence=self.pk_pr) # First identification of peaks in signal
+        if self.max_peak_amp is not None:  # Scenarios for identifying peaks with some amplitude ceiling
+            peaks_total, properties = find_peaks(y_filtered, height=(min_peak_amp, self.max_peak_amp),
+                                                 prominence=self.pk_pr)  # First identification of peaks in signal
         else:
             peaks_total, properties = find_peaks(y_filtered, height=min_peak_amp, prominence=self.pk_pr)
-            
+
         """
         Use 3rd derivative to update peak list sets before continuing
         - need to update peaks_total and properties
         - check if peaks are reidentified later during peak integration
         - check why peak_total is saved twice (in setup_subplot())
-        
+
         Suggested steps
         1. Plot signal, peaks identified by find_peaks, peaks identified by 3rd derivative
             1.1 Use centers of find_peaks() and 3rd derivative estimated centers to check for overlap
@@ -1826,7 +1844,7 @@ class GDGTAnalyzer:
             self._refresh_peak_annotations_for_axis(ax_idx)
         self.fig.canvas.draw_idle()
 
-# Baseline
+    # Baseline
     def asls_baseline(self, y, lam=1e6, p=0.001, max_iter=50, conv_thresh=1e-6, return_info=True):
         """
         Asymmetric Least Squares baseline (Eilers & Boelens, 2005).
@@ -1862,19 +1880,20 @@ class GDGTAnalyzer:
         n = y.size
         if n < 3:
             b = np.maximum(y, 0.0)
-            return (b, {'iterations': 0, 'converged': True, 'last_delta': 0.0, 'weights': np.ones_like(y)}) if return_info else b
+            return (b, {'iterations': 0, 'converged': True, 'last_delta': 0.0,
+                        'weights': np.ones_like(y)}) if return_info else b
 
         # Handle NaNs (linear interpolate)
         nan_mask = ~np.isfinite(y)
         if nan_mask.any():
             xi = np.arange(n)
-            y[ nan_mask] = np.interp(xi[nan_mask], xi[~nan_mask], y[~nan_mask])
+            y[nan_mask] = np.interp(xi[nan_mask], xi[~nan_mask], y[~nan_mask])
 
         # 2nd-difference operator D: shape (n-2, n)
         # D @ b ~ [b0 - 2b1 + b2, b1 - 2b2 + b3, ..., b_{n-3} - 2b_{n-2} + b_{n-1}]
-        diagonals = [np.ones(n-2), -2*np.ones(n-2), np.ones(n-2)]
-        offsets   = [0, 1, 2]
-        D = sparse.diags(diagonals, offsets, shape=(n-2, n), format='csc')
+        diagonals = [np.ones(n - 2), -2 * np.ones(n - 2), np.ones(n - 2)]
+        offsets = [0, 1, 2]
+        D = sparse.diags(diagonals, offsets, shape=(n - 2, n), format='csc')
 
         # Penalty matrix L = D^T D (symmetric pentadiagonal)
         L = (D.T @ D).tocsc()
@@ -1920,7 +1939,7 @@ class GDGTAnalyzer:
         span = (x.max() - x.min()) if len(x) else 1.0
 
         lam = 1e6 * max(1.0, (span / max(dx, 1e-6)) / 200.0)
-        p   = 0.01
+        p = 0.01
 
         b, info = self.asls(y, lam=lam, p=p, max_iter=50)
         b = np.maximum(b, 0.0)
@@ -1935,7 +1954,8 @@ class GDGTAnalyzer:
         abs_floor = 0.005 * dyn
         rel_floor = 0.02 * np.nanmedian(b) if np.isfinite(np.nanmedian(b)) else 0.0
         min_peak_amp = max(k * sigma, abs_floor, rel_floor)
-        return b, float(min_peak_amp*3)
+        return b, float(min_peak_amp * 3)
+
     ######################################################
     #################  Peak Select  ######################
     ######################################################
@@ -2037,6 +2057,7 @@ class GDGTAnalyzer:
             #     self.oof()
             # plt.grid(False)
             # plt.draw()
+
     def _register_no_peak(self, ax, ax_idx, x_pos, trace, line_color):
         self._nopeak_id += 1
         no_peak_key = (ax_idx, f"nopeak-{self._nopeak_id}")
@@ -2094,12 +2115,13 @@ class GDGTAnalyzer:
                                     if np.min(np.abs(xdata[peaks] - ref_peak)) < 0.25:  # Slightly higher threshold
                                         peak_found = True
                                         selected_peak = peaks[np.argmin(np.abs(xdata[peaks] - ref_peak))]
-                                        self.handle_peak_selection(ax, ax_idx, xdata, y_bcorr, selected_peak, peaks, trace)
+                                        self.handle_peak_selection(ax, ax_idx, xdata, y_bcorr, selected_peak, peaks,
+                                                                   trace)
                                         if self.cheers:
                                             self.nice()
                                         break
                                 if not peak_found:
-                                    self._register_no_peak(ax, ax_idx, ref_peak, trace, line_color = 'red')
+                                    self._register_no_peak(ax, ax_idx, ref_peak, trace, line_color='red')
                                     # self._nopeak_id += 1
                                     # no_peak_key = (ax_idx, f"nopeak-{self._nopeak_id}")
                                     # line = ax.axvline(ref_peak, color="red", linestyle="--", alpha=0.5)
@@ -2118,14 +2140,15 @@ class GDGTAnalyzer:
             "Model Type": [],
             "Model Parameters": {
                 "Amplitude": [],
-                "Center":    [],
-                "Width":     [],
+                "Center": [],
+                "Width": [],
                 "Amplitude Unc": [],
-                "Center Unc":    [],
-                "Width Unc":     [],
+                "Center Unc": [],
+                "Width Unc": [],
             },
             "Fit": {"x": [], "y": []},
         }
+
     def on_key(self, event):
         """
         Handles keyboard input events for controlling the peak selection and plot interactions.
@@ -2185,7 +2208,8 @@ class GDGTAnalyzer:
             trace_to_clear = self.axs_to_traces[self.axs[self.current_ax_idx]]
 
             # Remove any entries in self.integrated_peaks that have a matching trace value
-            self.integrated_peaks = {key: peak_data for key, peak_data in self.integrated_peaks.items() if "trace" in peak_data and peak_data["trace"] != trace_to_clear}
+            self.integrated_peaks = {key: peak_data for key, peak_data in self.integrated_peaks.items() if
+                                     "trace" in peak_data and peak_data["trace"] != trace_to_clear}
 
             # Clear the corresponding entries in self.peak_results
             if trace_to_clear in self.peak_results:
@@ -2201,7 +2225,6 @@ class GDGTAnalyzer:
             print("A new view!")
             self.add_window_controls()
             self.apply_window_bounds(self.window_bounds[0], self.window_bounds[1])
-
 
     def undo_last_action(self):
         if not self.action_stack:
@@ -2261,6 +2284,7 @@ class GDGTAnalyzer:
         self.setup_subplot(ax, ax_idx)
         self.apply_window_bounds(self.window_bounds[0], self.window_bounds[1])
         plt.draw()
+
     def clear_all_peaks(self):
         """
         Clears all peaks and resets all subplots by re-plotting the data.
@@ -2278,7 +2302,8 @@ class GDGTAnalyzer:
             trace_to_clear = self.axs_to_traces[self.axs[ax_idx]]
 
             # Remove any entries in self.integrated_peaks that have a matching trace value
-            keys_to_remove = [key for key, peak_data in self.integrated_peaks.items() if "trace" in peak_data and peak_data["trace"] == trace_to_clear]
+            keys_to_remove = [key for key, peak_data in self.integrated_peaks.items() if
+                              "trace" in peak_data and peak_data["trace"] == trace_to_clear]
             for key in keys_to_remove:
                 del self.integrated_peaks[key]
 
@@ -2293,6 +2318,7 @@ class GDGTAnalyzer:
 
         # Redraw the plot to reflect changes
         plt.draw()
+
     def collect_peak_data(self):
         """
         Collects and organizes peak data based on the GDGT (Glycerol Dialkyl Glycerol Tetraether) type provided.
@@ -2316,7 +2342,8 @@ class GDGTAnalyzer:
         gdgt_dict = self.GDGT_dict
         for trace_key, compounds in gdgt_dict.items():
             # Find matching peaks in self.integrated_peaks
-            matching_peaks = [peak_data for key, peak_data in self.integrated_peaks.items() if peak_data["trace"] == trace_key]
+            matching_peaks = [peak_data for key, peak_data in self.integrated_peaks.items() if
+                              peak_data["trace"] == trace_key]
             matching_peaks.sort(key=lambda peak: peak["rt"])
             if isinstance(compounds, list):  # If the key maps to multiple compounds
                 if len(matching_peaks) < len(compounds):
@@ -2388,12 +2415,12 @@ class GDGTAnalyzer:
 
         # ---------- Pull core fields (robust to missing keys) ----------
         area = float(peak_data.get("area", nan))
-        rt   = float(peak_data.get("rt",   nan))
+        rt = float(peak_data.get("rt", nan))
 
         model_type = peak_data.get("model_type")
-        params     = peak_data.get("params")      # expected dict: {"Amplitude", "Center", "Width"} or None
+        params = peak_data.get("params")  # expected dict: {"Amplitude", "Center", "Width"} or None
         params_unc = peak_data.get("params_unc")  # expected dict: {"Amplitude Unc", ...} or None
-        fit        = peak_data.get("fit", {})     # expected dict: {"x": ndarray/list, "y": ndarray/list}
+        fit = peak_data.get("fit", {})  # expected dict: {"x": ndarray/list, "y": ndarray/list}
 
         # Detect presence/absence:
         # If there's no model_type/params, treat as Absent (legacy: missing peak entries).
@@ -2406,11 +2433,11 @@ class GDGTAnalyzer:
         else:
             # Present single or multi (already sliced to the selected component upstream)
             amp = float(params.get("Amplitude", nan))
-            cen = float(params.get("Center",    nan))
-            wid = float(params.get("Width",     nan))
+            cen = float(params.get("Center", nan))
+            wid = float(params.get("Width", nan))
             a_u = float(params_unc.get("Amplitude Unc", nan)) if params_unc else nan
-            c_u = float(params_unc.get("Center Unc",    nan)) if params_unc else nan
-            w_u = float(params_unc.get("Width Unc",     nan)) if params_unc else nan
+            c_u = float(params_unc.get("Center Unc", nan)) if params_unc else nan
+            w_u = float(params_unc.get("Width Unc", nan)) if params_unc else nan
 
             # Fit curve (optional)
             x_fit_raw = fit.get("x", [])
