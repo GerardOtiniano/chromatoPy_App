@@ -1,13 +1,11 @@
 #!/bin/zsh
 
-# Launch chromatoPy directly from this source checkout.
-# This runs the local code in src/ and does not build or publish a release.
-
 set -u
 
-PROJECT_ROOT="${0:A:h}"
+PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
 LOCAL_PYTHON="$PROJECT_ROOT/.venv/bin/python"
 PYTHON_LAUNCHER="$PROJECT_ROOT/start_chromatopy.py"
+QT_PLUGINS="$PROJECT_ROOT/.venv/lib/python3.11/site-packages/PySide6/Qt/plugins"
 
 cd "$PROJECT_ROOT" || exit 1
 
@@ -20,9 +18,8 @@ fi
 export QT_API="pyside6"
 
 if [[ -x "$LOCAL_PYTHON" ]]; then
-    # exec "$LOCAL_PYTHON" "$PYTHON_LAUNCHER"
-    QT_PLUGINS="$PROJECT_ROOT/.venv/lib/python3.11/site-packages/PySide6/Qt/plugins"
-
+    # macOS may mark Qt plugins as hidden, which prevents Qt from
+    # discovering the Cocoa platform plugin.
     if [[ -d "$QT_PLUGINS" ]]; then
         chflags -R nohidden "$QT_PLUGINS"
     fi

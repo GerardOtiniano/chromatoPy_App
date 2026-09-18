@@ -55,7 +55,7 @@ class GDGTAnalyzer:
         self.min_peak_amp = min_PA
         self.debug = debug
         self.cheers = cheers
-        self.baseline_threshold = 0
+        self.baseline_threshold = {}
         self.time_column = time_column
         self.schema_type = schema_type
         self.use_asymmetric_peak_integration = use_asymmetric_peak_integration
@@ -1531,7 +1531,7 @@ class GDGTAnalyzer:
                     amp = float(model_params[0])  # [Amplitude, Center, Width]
                 except Exception:
                     amp = None
-            threshold = getattr(self, "baseline_threshold", 0.0)
+            threshold = self.baseline_threshold[trace]
             subthreshold = (amp is None) or np.isnan(amp) or (amp < threshold)
             if subthreshold:
                 self._register_no_peak(ax, ax_idx, rt_of_peak, trace, line_color="grey")
@@ -1753,7 +1753,7 @@ class GDGTAnalyzer:
         # Baseline correction and smoothing on the full dataset
         y_base, min_peak_amp = self.baseline(x_values, y)
         min_peak_amp = self.min_peak_amp if self.min_peak_amp is not None else min_peak_amp
-        self.baseline_threshold = min_peak_amp
+        self.baseline_threshold[trace] = float(min_peak_amp)
         y_bcorr = y - y_base
         if self.clip_negative_amplitudes:
             y_bcorr[y_bcorr < 0] = 0

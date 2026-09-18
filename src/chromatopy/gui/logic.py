@@ -466,7 +466,7 @@ def _gaussian_peak_area_distribution(peak: dict, n_draws: int = 1000) -> tuple[f
 
 def _iter_hplc_peak_entries(sample_data: dict):
     for group_name, group_data in sample_data.items():
-        if group_name == "Sample Name" or not isinstance(group_data, dict):
+        if group_name in {"Sample Name", "Baseline Thresholds"} or not isinstance(group_data, dict):
             continue
         for peak_name, peak_data in group_data.items():
             if isinstance(peak_data, dict):

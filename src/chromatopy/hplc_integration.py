@@ -167,7 +167,7 @@ def hplc_integration(folder_path=None,
         if sample_name in results_df["Sample Name"].values:
             continue
         peak_data = {"Sample Name": sample_name}
-        sample = {"Sample Name": sample_name}
+        sample = {"Sample Name": sample_name, "Baseline Thresholds": {}}
         # time_data = {"Sample Name": sample_name}
         # peak_unc_data = {"Sample Name": sample_name}
         trace_sets = gdgt_meta_set["Trace"]
@@ -189,6 +189,9 @@ def hplc_integration(folder_path=None,
                 message_callback=message_callback)
             # print(f"Begin peak selection for {sample_name}.")
             peaks, fig, ref_pk_new, t_pressed = analyzer.run()
+            # Snapshot this sample's effective thresholds; never put them in
+            # the reference peaks used to select peaks in subsequent samples.
+            sample["Baseline Thresholds"].update(analyzer.baseline_threshold)
             updated_window = list(analyzer.window_bounds)
             window[:] = updated_window
             if iref:
