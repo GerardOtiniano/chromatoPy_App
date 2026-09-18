@@ -1458,8 +1458,9 @@ class GDGTAnalyzer:
 
         Returns
         -------
-        None
-            This function updates the plot and internal data structures but does not return any values.
+        bool
+            True if a new integrated peak was stored. False for an existing
+            selection, a no-peak placeholder, or a failed integration.
 
         Notes
         -----
@@ -1467,8 +1468,15 @@ class GDGTAnalyzer:
         - A Gaussian fit is applied to the selected peak and its neighborhood.
         - The area under the Gaussian curve is calculated and displayed on the plot along with retention time.
         - The peak integration results are stored in `self.integrated_peaks` and `self.peak_results` for later analysis.
-        - If the peak selection or fitting process encounters a runtime error, the exception is handled and ignored.
+        - Selecting an already integrated peak leaves its fit, artists, and stored area unchanged.
+        - If peak selection or fitting fails, the exception is reported to the message callback.
         """
+        peak_key = (ax_idx, peak_idx)
+        # Manual and automatic selection share this guard: one stored peak must
+        # have exactly one set of plot artists, even after repeated clicks.
+        if peak_key in self.integrated_peaks:
+            return False
+
         try:
             valleys = self.find_valleys(y_bcorr, peaks)
             A, B, peak_neighborhood = self.find_peak_neighborhood_boundaries(xdata, y_bcorr, self.peaks[trace], valleys, peak_idx, ax, self.max_peaks_for_neighborhood, trace)
@@ -1490,7 +1498,7 @@ class GDGTAnalyzer:
             subthreshold = (amp is None) or np.isnan(amp) or (amp < threshold)
             if subthreshold:
                 self._register_no_peak(ax, ax_idx, rt_of_peak, trace, line_color="grey")
-                return
+                return False
             fill = ax.fill_between(x_fit, 0, y_fit_smooth, color="grey", alpha=0.5)
             rt_of_peak = xdata[peak_idx]
             area_text = f"Area: {area_smooth:.0f}\nRT: {rt_of_peak:.0f}"
@@ -1503,7 +1511,7 @@ class GDGTAnalyzer:
                 color="grey",
             )
 
-            self.integrated_peaks[(ax_idx, peak_idx)] = {
+            self.integrated_peaks[peak_key] = {
                 "fill": fill,
                 "text": text_annotation,
 
@@ -1579,6 +1587,7 @@ class GDGTAnalyzer:
 
             self.peak_results[trace]["Fit"]["x"].append(np.asarray(x_fit, dtype=float))
             self.peak_results[trace]["Fit"]["y"].append(np.asarray(y_fit_smooth, dtype=float))
+            return True
         except Exception as exc:
             x_value = None
             try:
@@ -1589,6 +1598,7 @@ class GDGTAnalyzer:
             self._emit_message(
                 f"{self.sample_name} | {trace} | peak selection failed{location}: {exc.__class__.__name__}: {exc}"
             )
+            return False
 
     ######################################################
     ################      Plot      ######################
@@ -2018,11 +2028,13 @@ class GDGTAnalyzer:
                 peak_found = True
                 selected_peak = peaks[np.argmin(np.abs(xdata[peaks] - event.xdata))]
                 # Correctly pass the trace identifier to handle_peak_selection
-                self.handle_peak_selection(ax, ax_idx, xdata, y_bcorr, selected_peak, peaks, trace)
-                # Store the action for undoing
-                self.action_stack.append(("select_peak", ax, (ax_idx, selected_peak)))
-                if self.cheers:
-                    self.nice()
+                added = self.handle_peak_selection(ax, ax_idx, xdata, y_bcorr, selected_peak, peaks, trace)
+                # Only a new integration is an undoable selection. No-peak
+                # placeholders register their own undo action.
+                if added:
+                    self.action_stack.append(("select_peak", ax, (ax_idx, selected_peak)))
+                    if self.cheers:
+                        self.nice()
                 break
         if not peak_found:
             self._register_no_peak(ax, ax_idx, event.xdata, trace, line_color='grey')
