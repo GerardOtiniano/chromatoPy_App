@@ -69,6 +69,8 @@ class GDGTAnalyzer:
         self._status_text = None
         self.b_pressed = False
         self.no_baseline_lines = {}
+        self.selection_count_texts = {}
+        self._laying_out_annotations = False
 
     def run(self):
         """
@@ -145,6 +147,23 @@ class GDGTAnalyzer:
             except Exception:
                 pass
         print(message)
+
+    def _update_peak_selection_count(self, ax, trace):
+        """Show the current stored selection count without changing peak assignment."""
+        compounds = self.GDGT_dict[trace]
+        expected = len(compounds) if isinstance(compounds, list) else 1
+        selected = sum(peak.get("trace") == trace for peak in self.integrated_peaks.values())
+        label = self.selection_count_texts.get(trace)
+        # ax.clear() removes annotations; create exactly one replacement label.
+        if label is None or label.axes is not ax or label not in ax.texts:
+            label = ax.text(
+                0.98, 0.98, "", transform=ax.transAxes,
+                ha="right", va="top", fontsize=8, color="grey", alpha=0.55,
+                bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.5, "pad": 2},
+                gid="peak-selection-count",
+            )
+            self.selection_count_texts[trace] = label
+        label.set_text(f"{selected}:{expected}")
 
     def _validate_peak_selection_counts(self):
         issues = []
@@ -1522,11 +1541,11 @@ class GDGTAnalyzer:
             area_text = f"Area: {area_smooth:.0f}\nRT: {rt_of_peak:.2f}"
             text_annotation = ax.annotate(
                 area_text,
-                xy=(rt_of_peak + 0.2, self._annotation_y(ax, level=0.55)),
-                textcoords="data",
-                ha="left",
-                fontsize=8,
-                color="grey",
+                xy=(rt_of_peak, 0), xytext=(rt_of_peak, 0),
+                textcoords="data", ha="left", va="bottom",
+                fontsize=8, color="grey",
+                arrowprops={"arrowstyle": "-", "color": "grey", "lw": 0.6,
+                            "shrinkA": 3, "shrinkB": 0},
             )
 
             self.integrated_peaks[peak_key] = {
@@ -1565,6 +1584,7 @@ class GDGTAnalyzer:
                         if (xarr.size >= 2 and np.allclose(np.diff(xarr), np.diff(xarr)[0], rtol=1e-6, atol=1e-12))
                         else {"encoding": "explicit", "n": int(xarr.size)}
                     ))(np.asarray(x_fit, dtype=float))), }
+            self._update_peak_selection_count(ax, trace)
             plt.draw()
             if trace not in self.peak_results:
                 self.peak_results[trace] = {
@@ -1714,6 +1734,7 @@ class GDGTAnalyzer:
 
         fig.suptitle(f"Sample: {self.sample_name}", fontsize=16, fontweight="bold")
 
+        fig.canvas.mpl_connect("draw_event", self._on_annotation_draw)
         return fig, axs
 
     def setup_subplot(self, ax, trace_idx):
@@ -1792,6 +1813,7 @@ class GDGTAnalyzer:
         self.peaks[trace] = peaks_total
         self.peak_properties[trace] = properties
         self.peaks_indices[trace_idx] = peaks_total
+        self._update_peak_selection_count(ax, trace)
 
     def _annotation_y(self, ax, level=0.72):
         ymin, ymax = ax.get_ylim()
@@ -1825,25 +1847,100 @@ class GDGTAnalyzer:
         ymax = float(np.nanmax(finite))
         return max(ymax, 1.0)
 
-    def _refresh_peak_annotations_for_axis(self, ax_idx):
-        ax = self.axs[ax_idx]
+    def _layout_peak_annotations(self, ax, renderer):
+        """Place measured caption boxes near their peaks without overlapping.
+
+        Work in screen coordinates so font size, zoom, and window size are
+        respected. Leader lines terminate 5% of the y-span above each fit apex.
+        Extremely crowded plots use the candidate with the least overlap.
+        """
+        from matplotlib.text import Text
+        from matplotlib.transforms import Bbox
+
         trace = self.axs_to_traces[ax]
-        visible_xmin, visible_xmax = self.window_bounds
-        for peak_data in self.integrated_peaks.values():
-            if peak_data.get("trace") != trace:
+        xmin, xmax = sorted(ax.get_xlim())
+        ymin, ymax = sorted(ax.get_ylim())
+        yspan = ymax - ymin
+        bounds = ax.get_window_extent(renderer)
+        pad = 4.0
+        occupied = []
+        counter = self.selection_count_texts.get(trace)
+        if counter is not None:
+            occupied.append(counter.get_window_extent(renderer).padded(pad))
+        changed = False
+        entries = sorted((p for p in self.integrated_peaks.values() if p.get("trace") == trace),
+                         key=lambda p: p["rt"])
+        for peak in entries:
+            caption = peak.get("text")
+            if caption is None:
                 continue
-            text = peak_data.get("text")
-            if text is None:
-                continue
-            rt = float(peak_data.get("rt", 0.0))
-            visible = visible_xmin <= rt <= visible_xmax
-            text.set_visible(visible)
+            visible = xmin <= peak["rt"] <= xmax
+            changed |= caption.get_visible() != visible
+            caption.set_visible(visible)
             if not visible:
                 continue
-            if peak_data.get("area", None) == 0:
-                text.set_position((rt + 0.2, self._annotation_y(ax, level=0.12)))
+            fit = peak.get("fit", {})
+            xs = np.asarray(fit.get("x", []), dtype=float)
+            ys = np.asarray(fit.get("y", []), dtype=float)
+            valid = np.isfinite(xs) & np.isfinite(ys) if xs.size == ys.size else np.array([])
+            if valid.any():
+                xs, ys = xs[valid], ys[valid]
+                apex = int(np.argmax(ys))
+                anchor = (float(xs[apex]), float(ys[apex]) + 0.05 * yspan)
             else:
-                text.xy = (rt + 0.2, self._annotation_y(ax, level=0.55))
+                anchor = (float(peak["rt"]), ymin + 0.05 * yspan)
+            changed |= not np.allclose(caption.xy, anchor)
+            caption.xy = anchor
+            # Measure only the text, excluding the connector's bounding box.
+            box = Text.get_window_extent(caption, renderer)
+            width, height = box.width, box.height
+            target = ax.transData.transform(anchor)
+            preferred = np.array([target[0] + 8, target[1] + 8])
+            xlo, xhi = bounds.x0 + pad, max(bounds.x0 + pad, bounds.x1 - width - pad)
+            ylo, yhi = bounds.y0 + pad, max(bounds.y0 + pad, bounds.y1 - height - pad)
+            # Try nearby positions first, then every available row. Labels may
+            # move sideways or below a tall peak when there is no space above.
+            rows = max(1, int(bounds.height / (height + 2 * pad)))
+            candidates = []
+            for row in range(-rows, rows + 1):
+                for column in (0, -1, 1, -2, 2):
+                    px = float(np.clip(preferred[0] + column * (width + 2 * pad), xlo, xhi))
+                    py = float(np.clip(preferred[1] + row * (height + 2 * pad), ylo, yhi))
+                    candidate = Bbox.from_bounds(px, py, width, height).padded(pad / 2)
+                    overlap = 0.0
+                    for other in occupied:
+                        intersection = Bbox.intersection(candidate, other)
+                        if intersection is not None:
+                            overlap += intersection.width * intersection.height
+                    distance = (px - preferred[0]) ** 2 + (py - preferred[1]) ** 2
+                    candidates.append((overlap, distance, px, py, candidate))
+            _, _, px, py, chosen = min(candidates, key=lambda item: item[:2])
+            position = ax.transData.inverted().transform((px, py))
+            old_position = ax.transData.transform(caption.get_position())
+            changed |= not np.allclose(old_position, (px, py), rtol=0, atol=0.1)
+            caption.set_position(position)
+            occupied.append(chosen)
+        return changed
+
+    def _on_annotation_draw(self, event):
+        # A second draw renders the adjusted positions. Guard that draw against
+        # recursively laying out or registering additional callbacks/artists.
+        if self._laying_out_annotations:
+            return
+        self._laying_out_annotations = True
+        try:
+            changed = False
+            for ax in event.canvas.figure.axes:
+                if ax in self.axs_to_traces:
+                    changed |= self._layout_peak_annotations(ax, event.renderer)
+            if changed:
+                event.canvas.draw_idle()
+        finally:
+            self._laying_out_annotations = False
+
+    def _refresh_peak_annotations_for_axis(self, ax_idx):
+        ax = self.axs[ax_idx]
+        self._layout_peak_annotations(ax, ax.figure.canvas.get_renderer())
 
     def apply_window_bounds(self, new_xmin, new_xmax):
         self.window_bounds = [float(new_xmin), float(new_xmax)]
@@ -2048,7 +2145,9 @@ class GDGTAnalyzer:
                 peak_found = True
                 selected_peak = peaks[np.argmin(np.abs(xdata[peaks] - event.xdata))]
                 # Correctly pass the trace identifier to handle_peak_selection
-                added = self.handle_peak_selection(ax, ax_idx, xdata, y_bcorr, selected_peak, peaks, trace)
+                added = self.handle_peak_selection(
+                    ax, ax_idx, xdata, y_bcorr, selected_peak, peaks, trace
+                )
                 # Only a new integration is an undoable selection. No-peak
                 # placeholders register their own undo action.
                 if added:
@@ -2074,12 +2173,17 @@ class GDGTAnalyzer:
         self._nopeak_id += 1
         no_peak_key = (ax_idx, f"nopeak-{self._nopeak_id}")
         line = ax.axvline(x_pos, color="grey", linestyle="--", zorder=-1)
-        text = ax.text(x_pos + 0.2, self._annotation_y(ax, level=0.12),
-                       "No peak\n" + str(np.round(x_pos)), color=line_color, fontsize=8)
+        text = ax.annotate(
+            f"No peak\n{x_pos:.2f}", xy=(x_pos, 0), xytext=(x_pos, 0),
+            textcoords="data", ha="left", va="bottom", color=line_color, fontsize=8,
+            arrowprops={"arrowstyle": "-", "color": "grey", "lw": 0.6,
+                        "shrinkA": 3, "shrinkB": 0},
+        )
         self.no_peak_lines[no_peak_key] = (line, text)
         self.integrated_peaks[no_peak_key] = {
             "area": 0, "rt": float(x_pos), "text": text, "line": [line], "trace": trace}
         self.action_stack.append(("add_nopeak", ax, no_peak_key))
+        self._update_peak_selection_count(ax, trace)
         if self.cheers:
             self.oof()
         plt.grid(False)
@@ -2217,15 +2321,6 @@ class GDGTAnalyzer:
             self.highlight_subplot()
         elif event.key == "r":
             self.clear_peaks_subplot(self.current_ax_idx)
-            trace_to_clear = self.axs_to_traces[self.axs[self.current_ax_idx]]
-
-            # Remove any entries in self.integrated_peaks that have a matching trace value
-            self.integrated_peaks = {key: peak_data for key, peak_data in self.integrated_peaks.items() if
-                                     "trace" in peak_data and peak_data["trace"] != trace_to_clear}
-
-            # Clear the corresponding entries in self.peak_results
-            if trace_to_clear in self.peak_results:
-                self.peak_results[trace_to_clear] = self._empty_trace_bucket()
             self.axs[-1].set_xlabel("Corrected Retention Time (minutes)")
             plt.draw()
         elif event.key == "t":
@@ -2239,6 +2334,7 @@ class GDGTAnalyzer:
             self.apply_window_bounds(self.window_bounds[0], self.window_bounds[1])
 
     def undo_last_action(self):
+        """Delete the latest selection; never restore previous peaks or markers."""
         if not self.action_stack:
             print("No actions to undo.")
             return
@@ -2254,6 +2350,7 @@ class GDGTAnalyzer:
                 text.remove()
             # If you mirrored it in integrated_peaks, clean that too:
             self.integrated_peaks.pop(key, None)
+            self._update_peak_selection_count(ax, self.axs_to_traces[ax])
             plt.draw()
             return
 
@@ -2267,6 +2364,7 @@ class GDGTAnalyzer:
                 peak_data["fill"].remove()
             if "text" in peak_data and peak_data["text"] is not None:
                 peak_data["text"].remove()
+            self._update_peak_selection_count(ax, self.axs_to_traces[ax])
             plt.draw()
         else:
             print(f"No graphical objects found for key {key}, action: {last_action}")
@@ -2292,6 +2390,14 @@ class GDGTAnalyzer:
         - The plot is updated and redrawn using `plt.draw()` to reflect the changes.
         """
         ax = self.axs[ax_idx]
+        trace = self.axs_to_traces[ax]
+        self.integrated_peaks = {key: peak for key, peak in self.integrated_peaks.items()
+                                 if peak.get("trace") != trace}
+        if trace in self.peak_results:
+            self.peak_results[trace] = self._empty_trace_bucket()
+        self.action_stack = [action for action in self.action_stack if action[1] is not ax]
+        self.no_peak_lines = {key: artists for key, artists in self.no_peak_lines.items()
+                              if key[0] != ax_idx}
         ax.clear()
         self.setup_subplot(ax, ax_idx)
         self.apply_window_bounds(self.window_bounds[0], self.window_bounds[1])
@@ -2311,19 +2417,6 @@ class GDGTAnalyzer:
         for ax_idx in range(len(self.axs)):
             # Clear peaks for each subplot
             self.clear_peaks_subplot(ax_idx)
-            trace_to_clear = self.axs_to_traces[self.axs[ax_idx]]
-
-            # Remove any entries in self.integrated_peaks that have a matching trace value
-            keys_to_remove = [key for key, peak_data in self.integrated_peaks.items() if
-                              "trace" in peak_data and peak_data["trace"] == trace_to_clear]
-            for key in keys_to_remove:
-                del self.integrated_peaks[key]
-
-            # Clear the corresponding entries in self.peak_results
-            if trace_to_clear in self.peak_results:
-                # for key in self.peak_results[trace_to_clear].keys():
-                #     self.peak_results[trace_to_clear][key]=[]
-                self.peak_results[trace_to_clear] = self._empty_trace_bucket()
 
         # Clear the action stack since all actions are undone
         self.action_stack.clear()
@@ -2344,7 +2437,7 @@ class GDGTAnalyzer:
         - The function retrieves the appropriate GDGT dictionary (`self.GDGT_dict`) to determine the compounds for each trace.
         - It then collects peaks from `self.integrated_peaks` that match each trace and organizes them by retention time (RT).
         - If multiple compounds are associated with a trace, the function assigns peaks to compounds based on their order in the list. If fewer peaks are found than expected, a warning is issued.
-        - For traces that correspond to a single compound, the first peak is selected and added to the results.
+        - Selections are assigned in retention-time order up to the configured compound count.
         - The `_append_peak_data` method is used to store the peak data for each compound in the `self.peak_results` dictionary.
         - Warnings are printed if no peaks or fewer peaks than expected are found for a given trace.
         """

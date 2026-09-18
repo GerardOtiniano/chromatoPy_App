@@ -20,6 +20,13 @@ fi
 export QT_API="pyside6"
 
 if [[ -x "$LOCAL_PYTHON" ]]; then
+    # exec "$LOCAL_PYTHON" "$PYTHON_LAUNCHER"
+    QT_PLUGINS="$PROJECT_ROOT/.venv/lib/python3.11/site-packages/PySide6/Qt/plugins"
+
+    if [[ -d "$QT_PLUGINS" ]]; then
+        chflags -R nohidden "$QT_PLUGINS"
+    fi
+
     exec "$LOCAL_PYTHON" "$PYTHON_LAUNCHER"
 fi
 
