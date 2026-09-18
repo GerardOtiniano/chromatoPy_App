@@ -26,6 +26,7 @@ from ..qt_compat import (
     QPushButton,
     QDoubleSpinBox,
     QSpinBox,
+    QScrollArea,
     QVBoxLayout,
     WaitCursor,
     QWidget,
@@ -64,7 +65,13 @@ class IntegrationConfigurationDialog(QDialog):
         self._on_file_count = on_file_count
         self._last_counted_folder = ""
 
-        layout = QVBoxLayout(self)
+        main_layout = QVBoxLayout(self)
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_content = QWidget()
+        layout = QVBoxLayout(scroll_content)
+        scroll_area.setWidget(scroll_content)
+        main_layout.addWidget(scroll_area, 1)
 
         intro = QLabel(
             "Load data folder containing converted data and verify the settings before launching integration"
@@ -250,15 +257,22 @@ class IntegrationConfigurationDialog(QDialog):
         self.peak_prominence_spin.setRange(0.000001, 1000.0)
         self.peak_prominence_spin.setDecimals(6)
         self.peak_prominence_spin.setValue(self._config.peak_prominence)
-        shared_grid.addWidget(QLabel("Peak Prominence"), 4, 0)
-        shared_grid.addWidget(self.peak_prominence_spin, 4, 1)
+        shared_grid.addWidget(QLabel("Peak Prominence"), 3, 0)
+        shared_grid.addWidget(self.peak_prominence_spin, 3, 1)
 
         self.clip_negative_checkbox = QCheckBox("Clip Negative Amplitudes to Zero")
         self.clip_negative_checkbox.setChecked(self._config.clip_negative_amplitudes)
         general_layout.addWidget(self.clip_negative_checkbox)
 
+        self.advanced_button = QPushButton("▶ Advanced Settings")
+        self.advanced_button.setCheckable(True)
+        self.advanced_button.setChecked(False)
+        self.advanced_button.toggled.connect(self._toggle_advanced_settings)
+        layout.addWidget(self.advanced_button)
+
         self.shared_settings_widget = QWidget()
         self.shared_settings_widget.setLayout(shared_grid)
+        self.shared_settings_widget.setVisible(False)
         layout.addWidget(self.shared_settings_widget)
 
         opt_button_row = QHBoxLayout()
@@ -270,7 +284,7 @@ class IntegrationConfigurationDialog(QDialog):
         buttons.accepted.connect(self._accept)
         buttons.rejected.connect(self.reject)
         opt_button_row.addWidget(buttons)
-        layout.addLayout(opt_button_row)
+        main_layout.addLayout(opt_button_row)
 
 
         self._reload_histories()
@@ -547,6 +561,13 @@ class IntegrationConfigurationDialog(QDialog):
         self._config.mode = current_mode
         self._config.input_folder = current_folder
         self._config_helper()
+
+    def _toggle_advanced_settings(self, checked):
+        self.shared_settings_widget.setVisible(checked)
+        if checked:
+            self.advanced_button.setText("▼ Advanced Settings")
+        else:
+            self.advanced_button.setText("▶ Advanced Settings")
 
     def configuration(self) -> IntegrationConfiguration:
         return copy.deepcopy(self._config)
